@@ -23,6 +23,10 @@ WAKE_PHRASES = ["hey robo", "hey, robo", "hey robot", "hey, robot"]
 # How long to record after the wake phrase is detected
 RECORD_AFTER_WAKE_S = 5
 
+# VAD (Voice Activity Detection)
+SILENCE_THRESHOLD = 300  # RMS energy threshold for silence. Adjust this based on your microphone sensitivity.
+SILENCE_DURATION_S = 2.0 # How many seconds of silence to wait for before stopping.
+
 # --- Global State ---
 audio_queue = queue.Queue()
 stop_event = threading.Event()
@@ -78,22 +82,46 @@ def transcription_thread():
             if stop_event.is_set():
                 break
 
-            # --- Phase 2: Record and Transcribe Command ---
-            print(f"Recording for {RECORD_AFTER_WAKE_S} seconds...")
+            # --- Phase 2: Record based on Voice Activity ---
+            print("Recording command (waiting for silence to stop)...")
             
             audio_buffer = []
-            num_chunks_to_record = int(SAMPLE_RATE * RECORD_AFTER_WAKE_S / CHUNK_SAMPLES)
-
-            # Drain the queue of any old audio before starting the new recording
+            silence_start_time = None
+            
+            # Drain the queue of any old audio
             while not audio_queue.empty():
                 audio_queue.get_nowait()
 
-            for i in range(num_chunks_to_record):
+            while True:
                 if stop_event.is_set():
                     break
-                # Visual feedback for recording
-                print(f"Recording... {i+1}/{num_chunks_to_record}", end='\r')
-                audio_buffer.append(audio_queue.get(timeout=1.5))
+                
+                try:
+                    audio_chunk = audio_queue.get(timeout=0.5)
+                    audio_buffer.append(audio_chunk)
+
+                    # Simple RMS-based VAD
+                    rms = np.sqrt(np.mean(audio_chunk.astype(np.float32)**2))
+
+                    if rms < SILENCE_THRESHOLD:
+                        if silence_start_time is None:
+                            silence_start_time = time.time()
+                        elif time.time() - silence_start_time > SILENCE_DURATION_S:
+                            print("\nSilence detected, stopping recording.")
+                            break
+                    else:
+                        # Reset silence timer if speech is detected
+                        silence_start_time = None
+                        print("Recording...", end='\r')
+
+
+                except queue.Empty:
+                    # If the queue is empty, check the silence timer
+                    if silence_start_time and (time.time() - silence_start_time > SILENCE_DURATION_S):
+                        print("\nSilence detected after timeout, stopping recording.")
+                        break
+                    continue
+            
             print("\nRecording complete.")
 
             if stop_event.is_set() or not audio_buffer:
