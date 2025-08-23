@@ -26,6 +26,7 @@ RECORD_AFTER_WAKE_S = 5
 # VAD (Voice Activity Detection)
 SILENCE_THRESHOLD = 300  # RMS energy threshold for silence. Adjust this based on your microphone sensitivity.
 SILENCE_DURATION_S = 2.0 # How many seconds of silence to wait for before stopping.
+ACTIVATE_ON_VAD = True # Trigger recording on any speech, not just wake word
 
 # --- Global State ---
 audio_queue = queue.Queue()
@@ -47,19 +48,19 @@ def transcription_thread():
 
     while not stop_event.is_set():
         try:
-            # --- Phase 1: Listen for Wake Phrase ---
-            print("\nListening for wake phrase...")
+            # --- Phase 1: Listen for Activation ---
+            print("\nListening for wake phrase or VAD activation...")
             
-            # Continuously transcribe and check for the wake phrase
+            first_chunk = None # To store the chunk that triggered activation
+
+            # Continuously transcribe and check for activation
             while not wake_phrase_detected.is_set():
                 if stop_event.is_set():
                     break
                 
-                # Get a chunk of audio
                 audio_chunk = audio_queue.get(timeout=1)
                 audio_float = audio_chunk.astype(np.float32) / 32768.0
 
-                # Transcribe the chunk
                 segments, _ = model.transcribe(
                     audio_float,
                     language="en",
@@ -72,13 +73,23 @@ def transcription_thread():
                 if transcription:
                     print(f"Heard: '{transcription}'")
 
-                # Check if any wake phrase is in the transcription
+                # Check for wake phrase
                 for phrase in WAKE_PHRASES:
                     if phrase in transcription:
                         print(f"\n--- Wake phrase '{phrase}' detected! ---")
                         wake_phrase_detected.set()
-                        break  # Exit loop once a phrase is detected
+                        first_chunk = audio_chunk
+                        break
+                
+                if wake_phrase_detected.is_set():
+                    break
 
+                # Check for VAD activation if enabled
+                if ACTIVATE_ON_VAD and transcription:
+                    print("\n--- VAD activation detected! ---")
+                    wake_phrase_detected.set()
+                    first_chunk = audio_chunk
+            
             if stop_event.is_set():
                 break
 
@@ -86,6 +97,9 @@ def transcription_thread():
             print("Recording command (waiting for silence to stop)...")
             
             audio_buffer = []
+            if first_chunk is not None:
+                audio_buffer.append(first_chunk)
+            
             silence_start_time = None
             
             # Drain the queue of any old audio
