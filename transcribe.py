@@ -7,7 +7,7 @@ from faster_whisper import WhisperModel
 
 # --- Configuration ---
 # Whisper Model
-MODEL_SIZE = "tiny.en"  # "tiny.en", "base.en", "small.en", "medium.en"
+MODEL_SIZE = "base.en"  # Options: "tiny.en", "base.en", "small.en", "medium.en"
 COMPUTE_TYPE = "int8"
 DEVICE = "cpu"
 
@@ -18,8 +18,8 @@ CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION_S)
 CHANNELS = 1
 AUDIO_FORMAT = pyaudio.paInt16
 
-# Wake Phrase
-WAKE_PHRASE = "hey agent"
+# Wake Phrases
+WAKE_PHRASES = ["hey robo", "hey, robo", "hey robot", "hey, robot"]
 # How long to record after the wake phrase is detected
 RECORD_AFTER_WAKE_S = 5
 
@@ -68,10 +68,12 @@ def transcription_thread():
                 if transcription:
                     print(f"Heard: '{transcription}'")
 
-                # Check if the wake phrase is in the transcription
-                if WAKE_PHRASE in transcription:
-                    print(f"\n--- Wake phrase '{WAKE_PHRASE}' detected! ---")
-                    wake_phrase_detected.set()
+                # Check if any wake phrase is in the transcription
+                for phrase in WAKE_PHRASES:
+                    if phrase in transcription:
+                        print(f"\n--- Wake phrase '{phrase}' detected! ---")
+                        wake_phrase_detected.set()
+                        break  # Exit loop once a phrase is detected
 
             if stop_event.is_set():
                 break
