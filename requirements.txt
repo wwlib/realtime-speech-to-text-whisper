@@ -1,4 +1,5 @@
 faster-whisper
 pyaudio
 numpy
-python-dotenv
+fastapi
+uvicorn[standard]
