@@ -4,12 +4,13 @@ import threading
 import time
 import numpy as np
 import pyaudio
-from faster_whisper import WhisperModel
+import whisper
+import tempfile
+import os
+from pathlib import Path
 
 # --- Configuration ---
-MODEL_SIZE = "base.en"  # Best balance of speed and accuracy for real-time transcription
-COMPUTE_TYPE = "int8"
-DEVICE = "cpu"  # MPS not supported by faster-whisper, but M4 CPU is very fast
+MODEL_SIZE = "base"  # "tiny", "base", "small", "medium", "large"
 SAMPLE_RATE = 16000
 CHUNK_DURATION_S = 1.0
 CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION_S)
@@ -21,29 +22,25 @@ SILENCE_THRESHOLD = 300  # RMS energy threshold for silence
 SILENCE_DURATION_S = 2.0  # How many seconds of silence before stopping recording
 MIN_RECORDING_DURATION_S = 1.0  # Minimum recording duration to avoid very short clips
 
-class TranscriptionService:
+class CoreMLTranscriptionService:
     def __init__(self, manager):
         self.manager = manager
         self.audio_queue = queue.Queue()
         self.stop_event = threading.Event()
         
-        # Debug: Print available devices
-        try:
-            import torch
-            print(f"PyTorch CUDA available: {torch.cuda.is_available()}")
-            print(f"PyTorch MPS available: {torch.backends.mps.is_available()}")
-        except ImportError:
-            print("PyTorch not available for device detection")
+        print(f"Loading Whisper model '{MODEL_SIZE}' with CoreML optimization...")
         
-        print(f"Attempting to load Whisper model with device='{DEVICE}', compute_type='{COMPUTE_TYPE}'")
+        # Load the model - this will automatically use CoreML on Apple Silicon
         try:
-            self.model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
-            print(f"Transcription model loaded successfully on device: {DEVICE}")
+            self.model = whisper.load_model(MODEL_SIZE)
+            print(f"Whisper model '{MODEL_SIZE}' loaded successfully with CoreML acceleration")
         except Exception as e:
-            print(f"Failed to load model with device '{DEVICE}': {e}")
-            print("Falling back to CPU...")
-            self.model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
-            print("Transcription model loaded on CPU.")
+            print(f"Failed to load model: {e}")
+            raise
+        
+        # Create temp directory for audio files
+        self.temp_dir = tempfile.mkdtemp()
+        print(f"Temporary directory created: {self.temp_dir}")
 
     def audio_callback(self, in_data, frame_count, time_info, status):
         """Puts audio data into a queue; called by PyAudio."""
@@ -54,6 +51,27 @@ class TranscriptionService:
         """Signal the service to stop gracefully."""
         print("Stopping transcription service...")
         self.stop_event.set()
+        # Clean up temp directory
+        try:
+            import shutil
+            shutil.rmtree(self.temp_dir)
+            print("Temporary directory cleaned up")
+        except Exception as e:
+            print(f"Error cleaning up temp directory: {e}")
+
+    def save_audio_to_file(self, audio_data, filename):
+        """Save audio data to a temporary WAV file for Whisper processing."""
+        import wave
+        
+        filepath = os.path.join(self.temp_dir, filename)
+        
+        with wave.open(filepath, 'wb') as wav_file:
+            wav_file.setnchannels(CHANNELS)
+            wav_file.setsampwidth(2)  # 16-bit audio
+            wav_file.setframerate(SAMPLE_RATE)
+            wav_file.writeframes(audio_data.tobytes())
+        
+        return filepath
 
     def run(self, loop):
         """Main loop for the transcription service."""
@@ -76,7 +94,9 @@ class TranscriptionService:
             return
 
         stream.start_stream()
-        print("Audio stream started. Service is running.")
+        print("Audio stream started. CoreML service is running.")
+
+        recording_counter = 0
 
         while not self.stop_event.is_set():
             try:
@@ -95,21 +115,9 @@ class TranscriptionService:
                         rms = np.sqrt(np.mean(audio_chunk.astype(np.float32)**2))
                         
                         if rms > SILENCE_THRESHOLD:
-                            # Quick transcription check to confirm it's speech
-                            audio_float = audio_chunk.astype(np.float32) / 32768.0
-                            segments, _ = self.model.transcribe(
-                                audio_float,
-                                language="en",
-                                vad_filter=True,
-                                vad_parameters=dict(min_silence_duration_ms=500),
-                            )
-                            
-                            transcription = "".join(segment.text for segment in segments).strip()
-                            
-                            if transcription:
-                                print(f"Speech detected: '{transcription}'")
-                                speech_detected = True
-                                first_chunk = audio_chunk
+                            print(f"Audio activity detected (RMS: {rms:.2f})")
+                            speech_detected = True
+                            first_chunk = audio_chunk
                     
                     except queue.Empty:
                         continue
@@ -163,28 +171,47 @@ class TranscriptionService:
                 recording_duration = time.time() - recording_start_time
                 
                 if audio_buffer and recording_duration >= MIN_RECORDING_DURATION_S:
-                    # Concatenate chunks and convert to float32
+                    # Concatenate chunks
                     audio_data = np.concatenate(audio_buffer, axis=0)
-                    audio_float = audio_data.astype(np.float32) / 32768.0
-
-                    print("Transcribing complete recording...")
-                    segments, _ = self.model.transcribe(
-                        audio_float, 
-                        language="en",
-                        vad_filter=True,
-                        vad_parameters=dict(min_silence_duration_ms=500)
-                    )
                     
-                    transcription = " ".join(segment.text for segment in segments).strip()
-
-                    if transcription:
-                        print(f"Final transcription: '{transcription}'")
-                        # Broadcast the transcription to all connected clients
-                        asyncio.run_coroutine_threadsafe(
-                            self.manager.broadcast(transcription), loop
+                    # Save to temporary WAV file
+                    recording_counter += 1
+                    temp_filename = f"recording_{recording_counter}.wav"
+                    temp_filepath = self.save_audio_to_file(audio_data, temp_filename)
+                    
+                    print("Transcribing with CoreML acceleration...")
+                    start_time = time.time()
+                    
+                    try:
+                        # Use Whisper with CoreML acceleration
+                        result = self.model.transcribe(
+                            temp_filepath,
+                            language="en",
+                            verbose=False
                         )
-                    else:
-                        print("No speech detected in recording.")
+                        
+                        transcription_time = time.time() - start_time
+                        transcription = result["text"].strip()
+
+                        if transcription:
+                            print(f"CoreML transcription ({transcription_time:.2f}s): '{transcription}'")
+                            # Broadcast the transcription to all connected clients
+                            asyncio.run_coroutine_threadsafe(
+                                self.manager.broadcast(transcription), loop
+                            )
+                        else:
+                            print("No speech detected in recording.")
+                    
+                    except Exception as e:
+                        print(f"Error during transcription: {e}")
+                    
+                    finally:
+                        # Clean up temporary file
+                        try:
+                            os.remove(temp_filepath)
+                        except Exception as e:
+                            print(f"Error removing temp file: {e}")
+                            
                 else:
                     print("Recording too short, skipping transcription.")
 
@@ -196,4 +223,4 @@ class TranscriptionService:
         stream.stop_stream()
         stream.close()
         p.terminate()
-        print("Transcription service stopped.")
+        print("CoreML transcription service stopped.")
