@@ -23,7 +23,7 @@ This project implements a local, real-time audio transcription system with wake 
 3. Ensure a microphone is connected and configured.
 
 
-## ADditional Installation Instructions
+## Additional Installation Instructions
 
 Mac
 ```
@@ -36,14 +36,26 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Usage
-1. Save the script as `transcribe.py`.
-2. Replace `YOUR_PICOVOICE_ACCESS_KEY` with your Picovoice key and specify your wake word in the `keywords` list.
-3. Run the script:
-   ```bash
-   python transcribe.py
-   ```
-4. Say the wake word (e.g., "Hey Agent") followed by your command. Transcriptions are printed and can be piped to an Ollama LLM.
+## Usage - Basic transcription
+
+Run the script:
+```bash
+python transcribe.py
+```
+Say the wake word (e.g., "Hey Robo") followed by your command. Transcriptions are printed and can be piped to an Ollama LLM.
+
+## Usage - Transcription Service with Browser Client
+
+Run the service:
+```bash
+uvicorn main:app --reload
+```
+
+This will start the server:
+```bash
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+```
+
 
 ## Code Overview
 ```python
