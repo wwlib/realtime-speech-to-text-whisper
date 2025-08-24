@@ -9,7 +9,7 @@ from faster_whisper import WhisperModel
 # --- Configuration ---
 MODEL_SIZE = "base.en"
 COMPUTE_TYPE = "int8"
-DEVICE = "cpu"
+DEVICE = "mps"  # Try MPS first, will fall back to CPU if not supported
 SAMPLE_RATE = 16000
 CHUNK_DURATION_S = 1.0
 CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION_S)
@@ -26,8 +26,24 @@ class TranscriptionService:
         self.manager = manager
         self.audio_queue = queue.Queue()
         self.stop_event = threading.Event()
-        self.model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
-        print("Transcription model loaded.")
+        
+        # Debug: Print available devices
+        try:
+            import torch
+            print(f"PyTorch CUDA available: {torch.cuda.is_available()}")
+            print(f"PyTorch MPS available: {torch.backends.mps.is_available()}")
+        except ImportError:
+            print("PyTorch not available for device detection")
+        
+        print(f"Attempting to load Whisper model with device='{DEVICE}', compute_type='{COMPUTE_TYPE}'")
+        try:
+            self.model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
+            print(f"Transcription model loaded successfully on device: {DEVICE}")
+        except Exception as e:
+            print(f"Failed to load model with device '{DEVICE}': {e}")
+            print("Falling back to CPU...")
+            self.model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+            print("Transcription model loaded on CPU.")
 
     def audio_callback(self, in_data, frame_count, time_info, status):
         """Puts audio data into a queue; called by PyAudio."""
