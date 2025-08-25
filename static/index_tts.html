@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realtime Speech-to-Text with TTS</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .transcription-box {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            min-height: 100px;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        .tts-section {
+            margin-top: 30px;
+            border-top: 1px solid #dee2e6;
+            padding-top: 20px;
+        }
+        .tts-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+        .tts-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .tts-button:hover {
+            background-color: #0056b3;
+        }
+        .tts-button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .audio-status {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .audio-playing { background-color: #d1ecf1; color: #0c5460; }
+        .audio-idle { background-color: #f8f9fa; color: #6c757d; }
+        .button-container {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .clear-button {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .clear-button:hover {
+            background-color: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Realtime Speech-to-Text with TTS</h1>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <div>
+            <h3>Live Transcription:</h3>
+            <div id="transcription" class="transcription-box">
+                Speak into your microphone to see real-time transcription...
+            </div>
+        </div>
+
+        <div class="tts-section">
+            <h3>Text-to-Speech:</h3>
+            <input type="text" id="ttsInput" class="tts-input" placeholder="Enter text to speak..." maxlength="500">
+            <div class="button-container">
+                <button id="speakButton" class="tts-button" onclick="speakText()">Speak</button>
+                <button id="clearButton" class="clear-button" onclick="clearInput()">Clear</button>
+            </div>
+            <div id="audioStatus" class="audio-status audio-idle">Audio: Idle</div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let audioContext = null;
+        let audioBuffer = [];
+        let isPlaying = false;
+        let expectedChunks = 0;
+        let receivedChunks = 0;
+        let audioSampleRate = 16000; // Will be updated from server
+
+        // Generate a unique client ID
+        const clientId = 'client_' + Math.random().toString(36).substr(2, 9);
+
+        // Initialize audio context
+        async function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+            }
+        }
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/${clientId}`;
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = function(event) {
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'status connected';
+                console.log('Connected to server');
+            };
+            
+            socket.onclose = function(event) {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'status disconnected';
+                console.log('Disconnected from server');
+                
+                // Attempt to reconnect after 3 seconds
+                setTimeout(connect, 3000);
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'transcription') {
+                    document.getElementById('transcription').textContent = data.text;
+                } else if (data.type === 'tts_start') {
+                    handleTTSStart(data);
+                } else if (data.type === 'tts_audio') {
+                    handleTTSAudio(data);
+                } else if (data.type === 'tts_end') {
+                    handleTTSEnd();
+                }
+            };
+            
+            socket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        function handleTTSStart(data) {
+            console.log('TTS start:', data);
+            expectedChunks = data.total_chunks;
+            receivedChunks = 0;
+            audioBuffer = [];
+            isPlaying = true;
+            // Update sample rate from server
+            audioSampleRate = data.sample_rate || 16000;
+            console.log('Audio sample rate:', audioSampleRate);
+            updateAudioStatus('Receiving audio...');
+        }
+
+        function handleTTSAudio(data) {
+            // Convert hex string back to audio data
+            const audioBytes = new Uint8Array(data.audio_data.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            const audioData = new Int16Array(audioBytes.buffer);
+            
+            audioBuffer.push(audioData);
+            receivedChunks++;
+            
+            updateAudioStatus(`Receiving audio... (${receivedChunks}/${expectedChunks})`);
+        }
+
+        async function handleTTSEnd() {
+            console.log('TTS end, playing audio');
+            updateAudioStatus('Playing audio...');
+            
+            await initAudioContext();
+            
+            // Concatenate all audio chunks
+            const totalLength = audioBuffer.reduce((sum, chunk) => sum + chunk.length, 0);
+            const combinedAudio = new Int16Array(totalLength);
+            let offset = 0;
+            
+            for (const chunk of audioBuffer) {
+                combinedAudio.set(chunk, offset);
+                offset += chunk.length;
+            }
+            
+            // Convert Int16 to Float32 for Web Audio API
+            const floatAudio = new Float32Array(combinedAudio.length);
+            for (let i = 0; i < combinedAudio.length; i++) {
+                floatAudio[i] = combinedAudio[i] / 32768.0;
+            }
+            
+            // Create audio buffer and play with correct sample rate
+            const buffer = audioContext.createBuffer(1, floatAudio.length, audioSampleRate);
+            buffer.copyToChannel(floatAudio, 0);
+            
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            
+            source.onended = () => {
+                isPlaying = false;
+                updateAudioStatus('Audio: Idle');
+                document.getElementById('speakButton').disabled = false;
+            };
+            
+            source.start();
+        }
+
+        function updateAudioStatus(message) {
+            const statusElement = document.getElementById('audioStatus');
+            statusElement.textContent = message;
+            statusElement.className = isPlaying ? 'audio-status audio-playing' : 'audio-status audio-idle';
+        }
+
+        function speakText() {
+            const text = document.getElementById('ttsInput').value.trim();
+            if (!text) {
+                alert('Please enter some text to speak');
+                return;
+            }
+            
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                alert('Not connected to server');
+                return;
+            }
+            
+            document.getElementById('speakButton').disabled = true;
+            socket.send(JSON.stringify({
+                type: 'tts_request',
+                text: text
+            }));
+        }
+
+        function clearInput() {
+            document.getElementById('ttsInput').value = '';
+        }
+
+        // Handle Enter key in text input
+        document.getElementById('ttsInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                speakText();
+            }
+        });
+
+        // Initialize audio context on first user interaction
+        document.addEventListener('click', initAudioContext, { once: true });
+
+        // Connect when page loads
+        connect();
+    </script>
+</body>
+</html>

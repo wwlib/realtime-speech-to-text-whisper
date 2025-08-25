@@ -122,3 +122,5 @@ dmypy.json
 .pyre/
 
 hide
+
+models

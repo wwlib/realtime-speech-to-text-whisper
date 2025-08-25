@@ -185,10 +185,8 @@ class TranscriptionService:
 
                     if transcription:
                         print(f"Final transcription: '{transcription}'")
-                        # Broadcast the transcription to all connected clients
-                        asyncio.run_coroutine_threadsafe(
-                            self.manager.broadcast(transcription), loop
-                        )
+                        # Queue the transcription to be broadcast by the main thread
+                        self.manager.queue_transcription(transcription)
                     else:
                         print("No speech detected in recording.")
                 else:
