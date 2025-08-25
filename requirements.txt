@@ -1,4 +1,5 @@
 openai-whisper
+faster-whisper
 pyaudio
 numpy
 fastapi

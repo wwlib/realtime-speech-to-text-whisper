@@ -33,6 +33,11 @@ audio_queue = queue.Queue()
 stop_event = threading.Event()
 wake_phrase_detected = threading.Event()
 
+p = pyaudio.PyAudio()
+for i in range(p.get_device_count()):
+    info = p.get_device_info_by_index(i)
+    print(f"Device {i}: {info['name']}")
+
 def audio_callback(in_data, frame_count, time_info, status):
     """Puts audio data into a queue; called by PyAudio."""
     audio_queue.put(np.frombuffer(in_data, dtype=np.int16))
@@ -183,6 +188,7 @@ def main():
             input=True,
             frames_per_buffer=CHUNK_SAMPLES,
             stream_callback=audio_callback,
+            input_device_index=None
         )
     except OSError as e:
         print(f"Error opening audio stream: {e}")

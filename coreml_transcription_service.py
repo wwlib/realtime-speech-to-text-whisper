@@ -19,7 +19,7 @@ AUDIO_FORMAT = pyaudio.paInt16
 
 # --- VAD Configuration ---
 SILENCE_THRESHOLD = 300  # RMS energy threshold for silence
-SILENCE_DURATION_S = 2.0  # How many seconds of silence before stopping recording
+SILENCE_DURATION_S = 0.125  # How many seconds of silence before stopping recording
 MIN_RECORDING_DURATION_S = 1.0  # Minimum recording duration to avoid very short clips
 
 class CoreMLTranscriptionService:

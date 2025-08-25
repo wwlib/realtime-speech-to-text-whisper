@@ -29,6 +29,7 @@ Mac
 ```
 brew install portaudio
 brew install ffmpeg
+brew install sox (for tne nodejs version)
 ```
 
 venv
@@ -50,7 +51,7 @@ Say the wake word (e.g., "Hey Robo") followed by your command. Transcriptions ar
 
 Run the service:
 ```bash
-uvicorn main:app --reload
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 This will start the server:
