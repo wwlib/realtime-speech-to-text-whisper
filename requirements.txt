@@ -3,4 +3,5 @@ pyaudio
 numpy
 fastapi
 uvicorn[standard]
+torch
 coremltools

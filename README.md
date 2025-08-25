@@ -28,6 +28,7 @@ This project implements a local, real-time audio transcription system with wake 
 Mac
 ```
 brew install portaudio
+brew install ffmpeg
 ```
 
 venv
