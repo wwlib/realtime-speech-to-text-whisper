@@ -92,9 +92,10 @@ class TTSService:
             traceback.print_exc()
             return None, None
     
-    async def process_tts_request(self, text, client_id=None):
+    async def process_tts_request(self, text, client_id=None, auto_tts=False):
         """Process a TTS request and stream audio to client(s)."""
-        print(f"Processing TTS request: '{text}'")
+        tts_type = "Auto-TTS" if auto_tts else "Manual TTS"
+        print(f"Processing {tts_type} request: '{text}'")
         
         # Synthesize audio (this runs in a thread to avoid blocking)
         loop = asyncio.get_event_loop()
@@ -102,23 +103,25 @@ class TTSService:
         
         if result[0] is not None:
             audio_data, sample_rate = result
-            await self.stream_audio(audio_data, sample_rate, client_id)
+            await self.stream_audio(audio_data, sample_rate, client_id, auto_tts)
         else:
             print("Failed to synthesize audio")
     
-    async def stream_audio(self, audio_data, sample_rate, client_id=None):
+    async def stream_audio(self, audio_data, sample_rate, client_id=None, auto_tts=False):
         """Stream audio data to browser client(s) in chunks."""
         chunk_size = int(sample_rate * 0.2)  # ~0.2 seconds worth of samples
         total_chunks = len(audio_data) // chunk_size + (1 if len(audio_data) % chunk_size else 0)
         
-        print(f"Streaming {len(audio_data)} audio samples at {sample_rate}Hz in {total_chunks} chunks")
+        tts_type = "Auto-TTS" if auto_tts else "Manual TTS"
+        print(f"Streaming {len(audio_data)} audio samples at {sample_rate}Hz in {total_chunks} chunks ({tts_type})")
         
-        # Send audio start signal with correct sample rate
+        # Send audio start signal with correct sample rate and auto-TTS flag
         await self.manager.broadcast_to_client({
             "type": "tts_start",
             "sample_rate": sample_rate,
             "channels": 1,
-            "total_chunks": total_chunks
+            "total_chunks": total_chunks,
+            "auto_tts": auto_tts
         }, client_id)
         
         # Stream audio chunks

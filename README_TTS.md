@@ -53,7 +53,7 @@ python3 main_tts.py
 
 ### 4. Open the Web Interface
 
-Navigate to `http://localhost:8000` in your browser.
+Navigate to `http://localhost:8001` in your browser.
 
 ## Usage
 
@@ -148,7 +148,7 @@ MIN_RECORDING_DURATION_S = 1.0  # Minimum recording length
 
 ### Connection Issues
 - Check firewall settings
-- Ensure port 8000 is available
+- Ensure port 8001 is available
 - Try refreshing the browser page
 
 ### Performance

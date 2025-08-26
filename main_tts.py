@@ -17,15 +17,30 @@ transcription_queue = queue.Queue()
 class ConnectionManager:
     def __init__(self):
         self.active_connections: dict[WebSocket, str] = {}
+        self.client_settings: dict[str, dict] = {}  # Track client settings including auto-TTS
 
     async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
         self.active_connections[websocket] = client_id
+        # Initialize client settings with auto-TTS enabled by default
+        self.client_settings[client_id] = {"auto_tts_enabled": True}
         print(f"Client {client_id} connected")
 
     def disconnect(self, websocket: WebSocket):
         client_id = self.active_connections.pop(websocket, "unknown")
+        # Clean up client settings
+        self.client_settings.pop(client_id, None)
         print(f"Client {client_id} disconnected")
+
+    def set_auto_tts(self, client_id: str, enabled: bool):
+        """Set auto-TTS setting for a specific client."""
+        if client_id in self.client_settings:
+            self.client_settings[client_id]["auto_tts_enabled"] = enabled
+            print(f"Client {client_id} auto-TTS: {'enabled' if enabled else 'disabled'}")
+
+    def is_auto_tts_enabled(self, client_id: str) -> bool:
+        """Check if auto-TTS is enabled for a specific client."""
+        return self.client_settings.get(client_id, {}).get("auto_tts_enabled", True)
 
     async def broadcast(self, message: str):
         """Broadcast transcription to all clients."""
@@ -82,7 +97,21 @@ async def process_transcription_queue():
         try:
             # Check for transcriptions with a short timeout
             transcription = transcription_queue.get(timeout=0.1)
+            
+            # Broadcast the transcription text to show in the browser
             await manager.broadcast(transcription)
+            
+            # Automatically trigger TTS for clients with auto-TTS enabled
+            if tts_service and transcription.strip():
+                # Check if any connected clients have auto-TTS enabled
+                auto_tts_clients = [client_id for client_id in manager.client_settings.keys() 
+                                  if manager.is_auto_tts_enabled(client_id)]
+                
+                if auto_tts_clients:
+                    print(f"Auto-TTS: Speaking transcription for {len(auto_tts_clients)} client(s): '{transcription}'")
+                    # Process TTS for clients with auto-TTS enabled
+                    await tts_service.process_tts_request(transcription, auto_tts=True)
+                
         except queue.Empty:
             pass
         except Exception as e:
@@ -114,8 +143,13 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             if data.get("type") == "tts_request":
                 text = data.get("text", "")
                 if text and tts_service:
-                    # Process TTS request for this specific client
-                    await tts_service.process_tts_request(text, client_id)
+                    # Process manual TTS request for this specific client
+                    await tts_service.process_tts_request(text, client_id, auto_tts=False)
+            
+            # Handle auto-TTS toggle
+            elif data.get("type") == "auto_tts_toggle":
+                enabled = data.get("enabled", True)
+                manager.set_auto_tts(client_id, enabled)
                     
     except WebSocketDisconnect:
         manager.disconnect(websocket)

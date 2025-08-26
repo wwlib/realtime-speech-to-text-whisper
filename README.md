@@ -54,6 +54,13 @@ Run the service:
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+OR on Apple Silicon
+
+Run the service:
+```bash
+uvicorn main_coreml:app --reload --host 0.0.0.0 --port 8000
+```
+
 This will start the server:
 ```bash
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)

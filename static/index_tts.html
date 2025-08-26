@@ -95,6 +95,17 @@
         .clear-button:hover {
             background-color: #5a6268;
         }
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 16px;
+            color: #333;
+            cursor: pointer;
+        }
+        .toggle-label input[type="checkbox"] {
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -112,10 +123,13 @@
 
         <div class="tts-section">
             <h3>Text-to-Speech:</h3>
-            <input type="text" id="ttsInput" class="tts-input" placeholder="Enter text to speak..." maxlength="500">
+            <input type="text" id="ttsInput" class="tts-input" placeholder="Click Speak to enable auto-TTS..." maxlength="500" value="Hello">
             <div class="button-container">
                 <button id="speakButton" class="tts-button" onclick="speakText()">Speak</button>
                 <button id="clearButton" class="clear-button" onclick="clearInput()">Clear</button>
+                <label class="toggle-label">
+                    <input type="checkbox" id="autoTTSToggle" checked onchange="toggleAutoTTS()"> Auto-TTS
+                </label>
             </div>
             <div id="audioStatus" class="audio-status audio-idle">Audio: Idle</div>
         </div>
@@ -129,6 +143,8 @@
         let expectedChunks = 0;
         let receivedChunks = 0;
         let audioSampleRate = 16000; // Will be updated from server
+        let currentAutoTTS = false; // Track if current audio is auto-TTS
+        let autoTTSEnabled = true; // Toggle for auto-TTS feature
 
         // Generate a unique client ID
         const clientId = 'client_' + Math.random().toString(36).substr(2, 9);
@@ -149,7 +165,7 @@
             socket = new WebSocket(wsUrl);
             
             socket.onopen = function(event) {
-                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').textContent = 'Connected - Click "Speak" button first to enable auto-TTS';
                 document.getElementById('status').className = 'status connected';
                 console.log('Connected to server');
             };
@@ -191,7 +207,11 @@
             // Update sample rate from server
             audioSampleRate = data.sample_rate || 16000;
             console.log('Audio sample rate:', audioSampleRate);
-            updateAudioStatus('Receiving audio...');
+            
+            // Check if this is auto-TTS (from transcription) or manual TTS
+            currentAutoTTS = data.auto_tts || false;
+            const statusText = currentAutoTTS ? 'Auto-TTS: Receiving audio...' : 'Receiving audio...';
+            updateAudioStatus(statusText);
         }
 
         function handleTTSAudio(data) {
@@ -202,7 +222,8 @@
             audioBuffer.push(audioData);
             receivedChunks++;
             
-            updateAudioStatus(`Receiving audio... (${receivedChunks}/${expectedChunks})`);
+            const prefix = currentAutoTTS ? 'Auto-TTS: ' : '';
+            updateAudioStatus(`${prefix}Receiving audio... (${receivedChunks}/${expectedChunks})`);
         }
 
         async function handleTTSEnd() {
@@ -237,8 +258,11 @@
             
             source.onended = () => {
                 isPlaying = false;
-                updateAudioStatus('Audio: Idle');
+                const endPrefix = currentAutoTTS ? 'Auto-TTS: ' : '';
+                updateAudioStatus(`${endPrefix}Audio: Idle`);
                 document.getElementById('speakButton').disabled = false;
+                // Clear the auto TTS flag after playback
+                currentAutoTTS = false;
             };
             
             source.start();
@@ -262,11 +286,39 @@
                 return;
             }
             
+            // Initialize audio context on first manual TTS
+            initAudioContext().then(() => {
+                // Update status to indicate auto-TTS is now ready
+                document.getElementById('status').textContent = 'Connected - Auto-TTS enabled! Speak to test.';
+            });
+            
             document.getElementById('speakButton').disabled = true;
             socket.send(JSON.stringify({
                 type: 'tts_request',
                 text: text
             }));
+        }
+
+        function toggleAutoTTS() {
+            autoTTSEnabled = document.getElementById('autoTTSToggle').checked;
+            const status = autoTTSEnabled ? 'enabled' : 'disabled';
+            console.log(`Auto-TTS ${status}`);
+            
+            // Send toggle state to server
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: 'auto_tts_toggle',
+                    enabled: autoTTSEnabled
+                }));
+            }
+            
+            // Update status message
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                const baseMessage = audioContext ? 'Connected - Auto-TTS' : 'Connected - Click "Speak" button first to enable auto-TTS';
+                document.getElementById('status').textContent = autoTTSEnabled ? 
+                    (audioContext ? 'Connected - Auto-TTS enabled! Speak to test.' : baseMessage) :
+                    'Connected - Auto-TTS disabled';
+            }
         }
 
         function clearInput() {
