@@ -21,8 +21,8 @@ class TTSService:
         
         # Piper voice model paths
         self.models_dir = "models"
-        self.model_path = os.path.join(self.models_dir, "en_US-lessac-medium.onnx")
-        self.config_path = os.path.join(self.models_dir, "en_US-lessac-medium.onnx.json")
+        self.model_path = os.path.join(self.models_dir, "en_US-amy-medium.onnx")
+        self.config_path = os.path.join(self.models_dir, "en_US-amy-medium.onnx.json")
         
         self.load_voice()
     
