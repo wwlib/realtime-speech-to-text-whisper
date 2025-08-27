@@ -38,7 +38,7 @@ class TTSService:
                 print(f"Piper TTS voice loaded successfully from {self.model_path}")
             else:
                 print(f"Voice model not found at {self.model_path}")
-                print("Run 'python download_models.py' to download the required models")
+                print("Run 'python tts/download_models.py' to download the required TTS models")
                 self.voice = None
         except Exception as e:
             print(f"Failed to load Piper voice: {e}")

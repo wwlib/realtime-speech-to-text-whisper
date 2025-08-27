@@ -37,7 +37,7 @@ pip install -r requirements_tts.txt
 ### 2. Download TTS Models
 
 ```bash
-python3 download_models.py
+python3 tts/download_models.py
 ```
 
 This will show you available voice models. Choose one or download all:
@@ -108,7 +108,7 @@ MIN_RECORDING_DURATION_S = 1.0  # Minimum recording length
 ├── main_tts.py              # Main server with TTS support
 ├── transcription_service.py  # Speech-to-text service
 ├── tts_service.py           # Text-to-speech service
-├── download_models.py       # Script to download TTS models
+├── tts/download_models.py    # Script to download TTS models
 ├── setup_tts.sh            # Setup script
 ├── requirements_tts.txt     # TTS-specific dependencies
 ├── static/
@@ -142,7 +142,7 @@ MIN_RECORDING_DURATION_S = 1.0  # Minimum recording length
 - Test microphone with other applications
 
 ### TTS Issues
-- Ensure models are downloaded: `python3 download_models.py`
+- Ensure models are downloaded: `python3 tts/download_models.py`
 - Check models directory exists and contains `.onnx` and `.onnx.json` files
 - Verify Piper TTS installation: `pip install piper-tts`
 

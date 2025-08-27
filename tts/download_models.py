@@ -77,8 +77,8 @@ def main():
     print("Piper TTS Model Downloader")
     print("=" * 40)
     
-    # Create models directory
-    models_dir = "models"
+    # Create models directory in the tts folder
+    models_dir = "tts/models"
     os.makedirs(models_dir, exist_ok=True)
     print(f"Models directory: {os.path.abspath(models_dir)}")
     

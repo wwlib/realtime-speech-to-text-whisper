@@ -12,7 +12,7 @@ This document summarizes the Text-to-Speech (TTS) implementation added to the re
 ### Setup and Configuration  
 - **`requirements_tts.txt`** - Additional dependencies for TTS
 - **`setup_tts.sh`** - Automated setup script
-- **`download_models.py`** - Interactive model downloader
+- **`tts/download_models.py`** - Interactive model downloader
 
 ### Testing and Demo
 - **`test_tts.py`** - TTS functionality test
@@ -80,7 +80,7 @@ This document summarizes the Text-to-Speech (TTS) implementation added to the re
 ### 1. **Quick Setup**
 ```bash
 ./setup_tts.sh
-python3 download_models.py
+python3 tts/download_models.py
 python3 main_tts.py
 ```
 
