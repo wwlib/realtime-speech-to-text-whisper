@@ -161,7 +161,7 @@
 
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/${clientId}`;
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
             socket = new WebSocket(wsUrl);
             
             socket.onopen = function(event) {
