@@ -98,6 +98,15 @@ class TranscriptionService(BaseTranscriptionService):
                 
                 while not speech_detected and not self.stop_event.is_set():
                     try:
+                        # Check if STT should be suppressed due to TTS playback
+                        if self.manager.is_stt_suppressed():
+                            # Skip processing during TTS playback/cooldown
+                            try:
+                                self.audio_queue.get(timeout=0.1)  # Drain queue
+                            except queue.Empty:
+                                pass
+                            continue
+                        
                         audio_chunk = self.audio_queue.get(timeout=1)
                         
                         # Check for voice activity using RMS

@@ -97,6 +97,9 @@ class TTSService:
         tts_type = "Auto-TTS" if auto_tts else "Manual TTS"
         print(f"Processing {tts_type} request: '{text}'")
         
+        # Add text to recent TTS list for feedback prevention
+        self.manager.add_recent_tts_text(text)
+        
         # Synthesize audio (this runs in a thread to avoid blocking)
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, self.synthesize_audio, text)
@@ -114,6 +117,9 @@ class TTSService:
         
         tts_type = "Auto-TTS" if auto_tts else "Manual TTS"
         print(f"Streaming {len(audio_data)} audio samples at {sample_rate}Hz in {total_chunks} chunks ({tts_type})")
+        
+        # Signal TTS playback start (for audio ducking)
+        self.manager.start_tts_playback()
         
         # Send audio start signal with correct sample rate and auto-TTS flag
         await self.manager.broadcast_to_client({
@@ -140,10 +146,21 @@ class TTSService:
             # Small delay to prevent overwhelming the client
             await asyncio.sleep(0.01)
         
+        # Calculate approximate playback duration and wait for it
+        playback_duration = len(audio_data) / sample_rate
+        print(f"Estimated playback duration: {playback_duration:.2f}s")
+        
         # Send audio end signal
         await self.manager.broadcast_to_client({
-            "type": "tts_end"
+            "type": "tts_end",
+            "playback_duration": playback_duration
         }, client_id)
+        
+        # Wait for the estimated playback duration before signaling end
+        await asyncio.sleep(playback_duration)
+        
+        # Signal TTS playback end (for audio ducking)
+        self.manager.end_tts_playback()
         
         print("Audio streaming complete")
     

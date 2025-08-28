@@ -86,6 +86,11 @@ async def transcription_queue_processor():
                 
                 # Handle auto-TTS for clients with it enabled
                 if tts_service and transcription.strip():
+                    # Check if this transcription is similar to recent TTS output (feedback prevention)
+                    if connection_manager.is_text_similar_to_recent_tts(transcription):
+                        print(f"Skipping auto-TTS for probable feedback: '{transcription}'")
+                        continue
+                    
                     # Check if any connected clients have auto-TTS enabled
                     auto_tts_clients = []
                     for client_id in connection_manager.client_settings.keys():
