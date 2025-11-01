@@ -2,6 +2,7 @@ import asyncio
 import queue
 import threading
 import time
+import os
 import numpy as np
 import pyaudio
 from faster_whisper import WhisperModel
@@ -17,10 +18,19 @@ CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION_S)
 CHANNELS = 1
 AUDIO_FORMAT = pyaudio.paInt16
 
+# Audio device configuration
+AUDIO_DEVICE_INDEX = os.getenv("AUDIO_DEVICE_INDEX")  # Set to device number or None for default
+if AUDIO_DEVICE_INDEX is not None:
+    try:
+        AUDIO_DEVICE_INDEX = int(AUDIO_DEVICE_INDEX)
+    except ValueError:
+        print(f"Invalid AUDIO_DEVICE_INDEX: {AUDIO_DEVICE_INDEX}, using default")
+        AUDIO_DEVICE_INDEX = None
+
 # --- VAD Configuration ---
-SILENCE_THRESHOLD = 300  # RMS energy threshold for silence
+SILENCE_THRESHOLD = 200  # Reduced from 300 - more sensitive to quiet speech
 SILENCE_DURATION_S = 0.125  # How many seconds of silence before stopping recording
-MIN_RECORDING_DURATION_S = 1.0  # Minimum recording duration to avoid very short clips
+MIN_RECORDING_DURATION_S = 0.8  # Reduced from 1.0 - allow shorter recordings
 
 # Debug: Print available audio devices
 p = pyaudio.PyAudio()
@@ -55,8 +65,21 @@ class TranscriptionService(BaseTranscriptionService):
 
     def audio_callback(self, in_data, frame_count, time_info, status):
         """Puts audio data into a queue; called by PyAudio."""
-        self.audio_queue.put(np.frombuffer(in_data, dtype=np.int16))
-        return (None, pyaudio.paContinue)
+        try:
+            audio_data = np.frombuffer(in_data, dtype=np.int16)
+            self.audio_queue.put(audio_data)
+            # Debug: Print occasionally to verify callback is working
+            if hasattr(self, '_callback_count'):
+                self._callback_count += 1
+                if self._callback_count % 100 == 0:  # Every 100 calls (~6 seconds at 16kHz)
+                    print(f"🎤 Audio callback working: {self._callback_count} calls, queue size: {self.audio_queue.qsize()}")
+            else:
+                self._callback_count = 1
+                print(f"🎤 Audio callback started")
+            return (None, pyaudio.paContinue)
+        except Exception as e:
+            print(f"❌ Audio callback error: {e}")
+            return (None, pyaudio.paAbort)
 
     def stop(self):
         """Signal the service to stop gracefully."""
@@ -69,6 +92,10 @@ class TranscriptionService(BaseTranscriptionService):
         p = pyaudio.PyAudio()
 
         try:
+            # Print which device we're using
+            device_msg = f"default device" if AUDIO_DEVICE_INDEX is None else f"device {AUDIO_DEVICE_INDEX}"
+            print(f"Opening audio stream using {device_msg}")
+            
             stream = p.open(
                 format=AUDIO_FORMAT,
                 channels=CHANNELS,
@@ -76,7 +103,7 @@ class TranscriptionService(BaseTranscriptionService):
                 input=True,
                 frames_per_buffer=CHUNK_SAMPLES,
                 stream_callback=self.audio_callback,
-                input_device_index=4  # Use default input device (microphone)
+                input_device_index=AUDIO_DEVICE_INDEX  # Use configured or default input device
             )
         except OSError as e:
             print(f"Error opening audio stream: {e}")
@@ -90,46 +117,62 @@ class TranscriptionService(BaseTranscriptionService):
         while not self.stop_event.is_set():
             try:
                 # --- Phase 1: Listen for Voice Activity ---
-                print("Listening for speech...")
+                print(f"🔄 [LOOP] Starting new iteration - listening for speech...")
                 
                 # Wait for audio activity
                 speech_detected = False
                 first_chunk = None
+                phase1_attempts = 0
                 
                 while not speech_detected and not self.stop_event.is_set():
+                    phase1_attempts += 1
                     try:
                         # Check if STT should be suppressed due to TTS playback
                         if self.manager.is_stt_suppressed():
                             # Skip processing during TTS playback/cooldown
-                            try:
-                                self.audio_queue.get(timeout=0.1)  # Drain queue
-                            except queue.Empty:
-                                pass
+                            # Drain all queued audio to prevent processing stale audio
+                            queue_size_before = self.audio_queue.qsize()
+                            while not self.audio_queue.empty():
+                                try:
+                                    self.audio_queue.get_nowait()
+                                except queue.Empty:
+                                    break
+                            if queue_size_before > 0:
+                                print(f"🚫 [LOOP] Cleared {queue_size_before} audio chunks during TTS suppression")
+                            time.sleep(0.1)  # Brief pause during suppression
                             continue
                         
+                        print(f"🎧 [LOOP] Phase 1, attempt {phase1_attempts}: Waiting for audio (queue: {self.audio_queue.qsize()})")
                         audio_chunk = self.audio_queue.get(timeout=1)
                         
                         # Check for voice activity using RMS
                         rms = np.sqrt(np.mean(audio_chunk.astype(np.float32)**2))
+                        print(f"📊 [LOOP] Audio RMS: {rms:.1f} (threshold: {SILENCE_THRESHOLD})")
                         
                         if rms > SILENCE_THRESHOLD:
+                            print(f"🔊 [LOOP] RMS above threshold, testing with Whisper...")
                             # Quick transcription check to confirm it's speech
                             audio_float = audio_chunk.astype(np.float32) / 32768.0
                             segments, _ = self.model.transcribe(
                                 audio_float,
                                 language="en",
                                 vad_filter=True,
-                                vad_parameters=dict(min_silence_duration_ms=500),
+                                vad_parameters=dict(min_silence_duration_ms=300),  # Reduced from 500ms
                             )
                             
                             transcription = "".join(segment.text for segment in segments).strip()
                             
                             if transcription:
-                                print(f"Speech detected: '{transcription}'")
+                                print(f"✅ [LOOP] Speech detected: '{transcription}'")
                                 speech_detected = True
                                 first_chunk = audio_chunk
+                            else:
+                                print(f"❌ [LOOP] No speech in Whisper transcription")
+                        else:
+                            print(f"🔇 [LOOP] RMS too low, continuing...")
                     
                     except queue.Empty:
+                        print(f"⏰ [LOOP] Queue timeout on attempt {phase1_attempts}")
                         continue
                 
                 if self.stop_event.is_set():
@@ -190,7 +233,7 @@ class TranscriptionService(BaseTranscriptionService):
                         audio_float, 
                         language="en",
                         vad_filter=True,
-                        vad_parameters=dict(min_silence_duration_ms=500)
+                        vad_parameters=dict(min_silence_duration_ms=300)  # Reduced from 500ms
                     )
                     
                     transcription = " ".join(segment.text for segment in segments).strip()
