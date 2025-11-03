@@ -176,7 +176,7 @@ class TranscriptNarrator:
         for voice_name in set(self.speaker_voices.values()):
             self.voice_manager.load_voice(voice_name)
     
-    def synthesize_to_file(self, text: str, voice_name: str) -> Optional[str]:
+    def synthesize_to_file(self, text: str, voice_name: str, target_sample_rate: int = 16000) -> Optional[str]:
         """Synthesize speech and save to temporary file."""
         voice = self.voice_manager.get_voice(voice_name)
         if not voice:
@@ -199,10 +199,27 @@ class TranscriptNarrator:
             if not audio_chunks:
                 return None
             
-            # Concatenate and convert to int16
+            # Concatenate audio
             audio_data = np.concatenate(audio_chunks)
+            
+            # Resample if needed
+            if sample_rate and sample_rate != target_sample_rate:
+                from scipy import signal
+                num_samples = int(len(audio_data) * target_sample_rate / sample_rate)
+                audio_data = signal.resample(audio_data, num_samples)
+            
+            # Clip and convert to 24-bit PCM (stored as int32 with 24-bit range)
             audio_clipped = np.clip(audio_data, -1.0, 1.0)
-            audio_int16 = (audio_clipped * 32767).astype(np.int16)
+            audio_int24 = (audio_clipped * 8388607).astype(np.int32)  # 2^23 - 1 = 8388607
+            
+            # Convert to 24-bit bytes (little-endian, 3 bytes per sample)
+            # Pack as 4-byte int32, then take first 3 bytes
+            audio_bytes_4 = audio_int24.tobytes()  # 4 bytes per sample
+            
+            # Extract 3 bytes per sample (little-endian)
+            audio_bytes = bytearray()
+            for i in range(0, len(audio_bytes_4), 4):
+                audio_bytes.extend(audio_bytes_4[i:i+3])  # Take first 3 bytes of each int32
             
             # Write to temporary WAV file
             temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -211,9 +228,9 @@ class TranscriptNarrator:
             
             with wave.open(temp_path, "wb") as wav_file:
                 wav_file.setnchannels(1)  # Mono
-                wav_file.setsampwidth(2)  # 16-bit
-                wav_file.setframerate(sample_rate or 22050)
-                wav_file.writeframes(audio_int16.tobytes())
+                wav_file.setsampwidth(3)  # 24-bit
+                wav_file.setframerate(target_sample_rate)
+                wav_file.writeframes(bytes(audio_bytes))
             
             return temp_path
             
@@ -301,12 +318,13 @@ class TranscriptNarrator:
         print("Transcript narration complete!")
         print("="*60)
     
-    def export_to_audio_file(self, output_path: str, pause_between_turns: float = 0.5, skip_empty: bool = True):
-        """Export entire transcript to a single audio file."""
+    def export_to_audio_file(self, output_path: str, pause_between_turns: float = 0.5, skip_empty: bool = True, target_sample_rate: int = 16000):
+        """Export entire transcript to a single audio file (24-bit PCM)."""
         turns = self.transcript_data["transcript"]["turns"]
         
         print("\n" + "="*60)
         print("Exporting transcript to audio file...")
+        print(f"Format: 24-bit PCM, {target_sample_rate} Hz, Mono")
         print(f"Default pause: {pause_between_turns}s between turns")
         print("="*60)
         
@@ -372,28 +390,53 @@ class TranscriptNarrator:
         try:
             # Concatenate all audio
             final_audio = np.concatenate(all_audio_chunks)
+            
+            # Resample if needed
+            if sample_rate and sample_rate != target_sample_rate:
+                try:
+                    from scipy import signal
+                    num_samples = int(len(final_audio) * target_sample_rate / sample_rate)
+                    final_audio = signal.resample(final_audio, num_samples)
+                    print(f"  Resampled from {sample_rate} Hz to {target_sample_rate} Hz")
+                except ImportError:
+                    print(f"  Warning: scipy not installed, keeping original sample rate {sample_rate} Hz")
+                    target_sample_rate = sample_rate
+            
+            # Clip and convert to 24-bit PCM (stored as int32 with 24-bit range)
             audio_clipped = np.clip(final_audio, -1.0, 1.0)
-            audio_int16 = (audio_clipped * 32767).astype(np.int16)
+            audio_int24 = (audio_clipped * 8388607).astype(np.int32)  # 2^23 - 1 = 8388607
+            
+            # Convert to 24-bit bytes (little-endian, 3 bytes per sample)
+            # Pack as 4-byte int32, then take first 3 bytes
+            audio_bytes_4 = audio_int24.tobytes()  # 4 bytes per sample
+            
+            # Extract 3 bytes per sample (little-endian)
+            audio_bytes = bytearray()
+            for i in range(0, len(audio_bytes_4), 4):
+                audio_bytes.extend(audio_bytes_4[i:i+3])  # Take first 3 bytes of each int32
             
             # Write to file
             output_path = Path(output_path)
             with wave.open(str(output_path), "wb") as wav_file:
                 wav_file.setnchannels(1)  # Mono
-                wav_file.setsampwidth(2)  # 16-bit
-                wav_file.setframerate(sample_rate or 22050)
-                wav_file.writeframes(audio_int16.tobytes())
+                wav_file.setsampwidth(3)  # 24-bit
+                wav_file.setframerate(target_sample_rate)
+                wav_file.writeframes(bytes(audio_bytes))
             
-            duration = len(final_audio) / (sample_rate or 22050)
+            duration = len(final_audio) / target_sample_rate
             print("\n" + "="*60)
             print(f"✓ Audio file saved: {output_path}")
+            print(f"  Format: 24-bit PCM, {target_sample_rate} Hz, Mono")
             print(f"  Duration: {duration:.1f} seconds")
-            print(f"  Sample rate: {sample_rate or 22050} Hz")
+            print(f"  File size: {output_path.stat().st_size / 1024:.1f} KB")
             print("="*60)
             
             return True
             
         except Exception as e:
             print(f"\n❌ Error saving audio file: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def interactive_mode(self):
