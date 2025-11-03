@@ -564,6 +564,32 @@ class TranscriptNarrator:
         print("="*60)
 
 
+def generate_output_filename(transcript_path: str, audio_format: AudioFormat, pause_duration: float) -> str:
+    """Generate a descriptive output filename based on input and options."""
+    # Get base name without extension
+    transcript_file = Path(transcript_path)
+    base_name = transcript_file.stem
+    
+    # Format parts
+    format_map = {
+        AudioFormat.FORMAT_16BIT_22050: "16bit-22050hz",
+        AudioFormat.FORMAT_16BIT_16000: "16bit-16000hz",
+        AudioFormat.FORMAT_24BIT_16000: "24bit-16000hz",
+    }
+    format_str = format_map.get(audio_format.format_name, "default")
+    
+    # Pause duration (formatted to avoid decimals when possible)
+    if pause_duration == int(pause_duration):
+        pause_str = f"pause{int(pause_duration)}s"
+    else:
+        pause_str = f"pause{pause_duration:.1f}s".replace(".", "p")
+    
+    # Combine: transcript-name_format_pause.wav
+    output_filename = f"{base_name}_{format_str}_{pause_str}.wav"
+    
+    return output_filename
+
+
 def main():
     """Main function."""
     print("=" * 60)
@@ -633,16 +659,18 @@ def main():
         elif mode == "2":
             narrator.interactive_mode()
         elif mode == "3":
-            # Export only
-            output_file = input("Output filename (default: narration.wav): ").strip()
+            # Export only - generate default filename
+            default_output = generate_output_filename(transcript_path, audio_format, pause_duration)
+            output_file = input(f"Output filename (default: {default_output}): ").strip()
             if not output_file:
-                output_file = "narration.wav"
+                output_file = default_output
             narrator.export_to_audio_file(output_file, pause_between_turns=pause_duration, skip_empty=True, audio_format=audio_format)
         elif mode == "4":
-            # Export and play
-            output_file = input("Output filename (default: narration.wav): ").strip()
+            # Export and play - generate default filename
+            default_output = generate_output_filename(transcript_path, audio_format, pause_duration)
+            output_file = input(f"Output filename (default: {default_output}): ").strip()
             if not output_file:
-                output_file = "narration.wav"
+                output_file = default_output
             
             if narrator.export_to_audio_file(output_file, pause_between_turns=pause_duration, skip_empty=True, audio_format=audio_format):
                 print("\nNow playing the exported file...")

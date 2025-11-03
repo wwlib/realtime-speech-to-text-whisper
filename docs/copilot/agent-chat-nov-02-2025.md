@@ -630,3 +630,109 @@ python agent_examples/transcript_narrator_example.py
 Select mode 3, choose your format, and export! 🎉
 
 Made changes.
+
+wwlib: Let's make the output filename default a combination of the input transcript filename and the options for pause duration and audio format.
+
+GitHub Copilot: Great idea! Let me update the code to automatically generate descriptive output filenames based on the input file and options. 
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/transcript_narrator_example.py#580-580), lines 580 to 660
+
+Now let me add a helper function to generate the default filename and update the main function: 
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+Oops, I made a typo. Let me fix it: 
+
+Using "Replace String in File"
+
+
+```
+
+```
+Perfect! Now let me update the README to show examples of the new default filenames: 
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/README-audio-export.md#1-1), lines 1 to 81
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+Perfect! I've successfully implemented smart default filenames. Here's what changed:
+
+## Summary of Changes
+
+### ✅ Smart Default Filenames
+
+The output filename is now automatically generated based on:
+1. **Input transcript name** (without extension)
+2. **Audio format** chosen
+3. **Pause duration** between turns
+
+### Filename Format:
+```
+{transcript-name}_{format}_{pause}.wav
+```
+
+### Examples:
+
+**Input:** transcript-1.json
+- Format: 24-bit @ 16kHz
+- Pause: 0.5s
+- **Output:** `transcript-1_24bit-16000hz_pause0p5s.wav`
+
+**Input:** large-transcript-example-1.json
+- Format: 16-bit @ 16kHz
+- Pause: 2.0s
+- **Output:** `large-transcript-example-1_16bit-16000hz_pause2s.wav`
+
+**Input:** `nurse-interview.json`
+- Format: 16-bit @ 22050Hz
+- Pause: 1.5s
+- **Output:** `nurse-interview_16bit-22050hz_pause1p5s.wav`
+
+### Benefits:
+
+✅ **Descriptive** - You can tell what settings were used just from the filename
+✅ **Organized** - Multiple exports don't overwrite each other
+✅ **Trackable** - Easy to compare different format/pause combinations
+✅ **Optional** - You can still provide a custom filename if you want
+
+### How it works:
+
+When prompted for the output filename:
+```
+Output filename (default: transcript-1_16bit-16000hz_pause1s.wav):
+```
+
+- Press **Enter** to use the smart default
+- Or type a custom name to override
+
+Try it out now! 🎉
+
+```bash
+python agent_examples/transcript_narrator_example.py
+```
+
+Made changes.

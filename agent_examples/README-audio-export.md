@@ -58,6 +58,24 @@ Audio format options:
 Choose format (1-3, default: 3):
 ```
 
+### Smart Default Filenames
+
+The app automatically generates descriptive filenames based on your input transcript and chosen options:
+
+**Format:** `{transcript-name}_{format}_{pause}.wav`
+
+**Examples:**
+- Input: `transcript-1.json`, 24-bit/16kHz, 0.5s pause
+  - Output: `transcript-1_24bit-16000hz_pause0p5s.wav`
+
+- Input: `large-transcript-example-1.json`, 16-bit/16kHz, 2.0s pause
+  - Output: `large-transcript-example-1_16bit-16000hz_pause2s.wav`
+
+- Input: `nurse-interview.json`, 16-bit/22050Hz, 1.5s pause
+  - Output: `nurse-interview_16bit-22050hz_pause1p5s.wav`
+
+You can still provide a custom filename when prompted, or just press Enter to use the smart default!
+
 ### Audio Quality Comparison
 
 **Bit Depth:**
@@ -123,7 +141,7 @@ Selected: 16-bit PCM, 16000 Hz
 Pause between turns in seconds (default: 0.5): 1.0
 Using pause duration: 1.0s
 
-Output filename (default: narration.wav): my-transcript.wav
+Output filename (default: transcript-1_16bit-16000hz_pause1s.wav): 
 
 ============================================================
 Exporting transcript to audio file...
@@ -134,7 +152,7 @@ Default pause: 1.0s between turns
   Resampled from 22050 Hz to 16000 Hz
 [Turn 1] Patient: "Hi, Dr. Smith. I'm feeling okay..."
 ============================================================
-✓ Audio file saved: my-transcript.wav
+✓ Audio file saved: transcript-1_16bit-16000hz_pause1s.wav
   Format: 16-bit PCM, 16000 Hz, Mono
   Duration: 45.2 seconds
   File size: 1416.3 KB
