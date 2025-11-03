@@ -98,6 +98,7 @@ class TranscriptNarrator:
             "Patient": "en_US-ryan-high",
             "Doctor": "en_US-lessac-medium",
             "Nurse": "en_US-amy-medium",
+            "Other": "en_US-ryan-high",
         }
         
         # Initialize
@@ -242,11 +243,16 @@ class TranscriptNarrator:
         except Exception as e:
             print(f"Error playing audio: {e}")
     
-    def narrate_turn(self, turn: Dict):
+    def narrate_turn(self, turn: Dict, skip_empty: bool = True):
         """Narrate a single turn of the transcript."""
         speaker = turn["speaker"]
         text = turn["text"]
         index = turn["index"]
+        
+        # Skip empty turns if requested
+        if skip_empty and not text.strip():
+            print(f"\n[Turn {index}] {speaker}: (empty - skipped)")
+            return
         
         voice_name = self.speaker_voices.get(speaker, list(self.speaker_voices.values())[0])
         
@@ -267,40 +273,55 @@ class TranscriptNarrator:
         else:
             print("  ⚠️  Failed to synthesize audio")
     
-    def narrate_full_transcript(self, pause_between_turns: float = 0.5):
+    def narrate_full_transcript(self, pause_between_turns: float = 0.5, skip_empty: bool = True):
         """Narrate the entire transcript."""
         turns = self.transcript_data["transcript"]["turns"]
         
         print("\n" + "="*60)
         print("Starting transcript narration...")
+        print(f"Default pause: {pause_between_turns}s between turns")
         print("="*60)
         
-        for turn in turns:
-            self.narrate_turn(turn)
+        for i, turn in enumerate(turns):
+            # Skip empty turns if requested
+            if skip_empty and not turn.get("text", "").strip():
+                continue
             
-            # Pause between turns
-            if pause_between_turns > 0:
-                time.sleep(pause_between_turns)
+            self.narrate_turn(turn, skip_empty=skip_empty)
+            
+            # Check for custom pause in turn data
+            custom_pause = turn.get("pause_after", None)
+            pause_duration = custom_pause if custom_pause is not None else pause_between_turns
+            
+            # Pause between turns (but not after the last turn)
+            if i < len(turns) - 1 and pause_duration > 0:
+                time.sleep(pause_duration)
         
         print("\n" + "="*60)
         print("Transcript narration complete!")
         print("="*60)
     
-    def export_to_audio_file(self, output_path: str, pause_between_turns: float = 0.5):
+    def export_to_audio_file(self, output_path: str, pause_between_turns: float = 0.5, skip_empty: bool = True):
         """Export entire transcript to a single audio file."""
         turns = self.transcript_data["transcript"]["turns"]
         
         print("\n" + "="*60)
         print("Exporting transcript to audio file...")
+        print(f"Default pause: {pause_between_turns}s between turns")
         print("="*60)
         
         all_audio_chunks = []
         sample_rate = None
         
-        for turn in turns:
+        for i, turn in enumerate(turns):
             speaker = turn["speaker"]
             text = turn["text"]
             index = turn["index"]
+            
+            # Skip empty turns if requested
+            if skip_empty and not text.strip():
+                print(f"[Turn {index}] {speaker}: (empty - skipped)")
+                continue
             
             voice_name = self.speaker_voices.get(speaker, list(self.speaker_voices.values())[0])
             voice = self.voice_manager.get_voice(voice_name)
@@ -328,11 +349,17 @@ class TranscriptNarrator:
                     turn_audio = np.concatenate(audio_chunks)
                     all_audio_chunks.append(turn_audio)
                     
-                    # Add pause between turns (silence)
-                    if pause_between_turns > 0 and index < len(turns) - 1:
-                        silence_samples = int((sample_rate or 22050) * pause_between_turns)
+                    # Check for custom pause in turn data
+                    custom_pause = turn.get("pause_after", None)
+                    pause_duration = custom_pause if custom_pause is not None else pause_between_turns
+                    
+                    # Add pause between turns (but not after the last turn)
+                    if pause_duration > 0 and i < len(turns) - 1:
+                        silence_samples = int((sample_rate or 22050) * pause_duration)
                         silence = np.zeros(silence_samples, dtype=np.float32)
                         all_audio_chunks.append(silence)
+                        if custom_pause is not None:
+                            print(f"  (custom pause: {pause_duration}s)")
                 
             except Exception as e:
                 print(f"  ⚠️  Error processing turn {index}: {e}")
@@ -460,11 +487,23 @@ def main():
     
     mode = input("Choose mode (1-4): ").strip()
     
+    # Get pause duration for modes that need it
+    pause_duration = 0.5  # Default
+    if mode in ["1", "3", "4"]:
+        pause_input = input(f"Pause between turns in seconds (default: 0.5): ").strip()
+        if pause_input:
+            try:
+                pause_duration = float(pause_input)
+                print(f"Using pause duration: {pause_duration}s")
+            except ValueError:
+                print(f"Invalid input, using default: 0.5s")
+                pause_duration = 0.5
+    
     print()  # Blank line
     
     try:
         if mode == "1":
-            narrator.narrate_full_transcript(pause_between_turns=0.5)
+            narrator.narrate_full_transcript(pause_between_turns=pause_duration, skip_empty=True)
         elif mode == "2":
             narrator.interactive_mode()
         elif mode == "3":
@@ -472,20 +511,20 @@ def main():
             output_file = input("Output filename (default: narration.wav): ").strip()
             if not output_file:
                 output_file = "narration.wav"
-            narrator.export_to_audio_file(output_file, pause_between_turns=0.5)
+            narrator.export_to_audio_file(output_file, pause_between_turns=pause_duration, skip_empty=True)
         elif mode == "4":
             # Export and play
             output_file = input("Output filename (default: narration.wav): ").strip()
             if not output_file:
                 output_file = "narration.wav"
             
-            if narrator.export_to_audio_file(output_file, pause_between_turns=0.5):
+            if narrator.export_to_audio_file(output_file, pause_between_turns=pause_duration, skip_empty=True):
                 print("\nNow playing the exported file...")
                 time.sleep(1)
                 narrator.play_audio_file(output_file)
         else:
             print("Invalid choice. Using auto-play mode.")
-            narrator.narrate_full_transcript(pause_between_turns=0.5)
+            narrator.narrate_full_transcript(pause_between_turns=pause_duration, skip_empty=True)
     except KeyboardInterrupt:
         print("\n\nNarration interrupted by user.")
     except Exception as e:

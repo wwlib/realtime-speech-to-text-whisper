@@ -96,7 +96,7 @@ Want to try it out?
 
 Made changes.
 
-wwlib: Perfect. I am ruinning the app on a Mac Mini. What is the easiest way to record the audio? i.e. using QuickTime Player?
+wwlib: Perfect. I am running the app on a Mac Mini. What is the easiest way to record the audio? i.e. using QuickTime Player?
 
 GitHub Copilot: Yes! QuickTime Player is the easiest way to record the narrated audio on your Mac Mini. Here's how:
 
@@ -214,5 +214,121 @@ The exported WAV file will be:
 - Ready to use in any audio editor or player
 
 Try it now with mode 3 to export `narration.wav`! This is by far the easiest way to get a recording of your transcript narration.
+
+Made changes.
+
+wwlib: This is great. It would be good to have a way to allow for arbitrary pausing/silence between turns. Thoughts?
+
+GitHub Copilot: Great idea! Let me check the current file first to see what you've modified, then add flexible pause control. 
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/transcript_narrator_example.py#1-1), lines 1 to 101
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/large-transcript-example-1.json#1-1), lines 1 to 31
+
+Perfect! I can see you're working with a larger transcript. Let me add flexible pause control. Here are a few approaches:
+
+## Best Approach: Add Pause Configuration to Transcript JSON
+
+This allows you to specify pauses per turn or use defaults: 
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+Now let me update the main function to allow users to customize the pause duration: 
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/transcript_narrator_example.py#445-445), lines 445 to 495
+
+Using "Replace String in File"
+
+
+```
+
+```
+Perfect! Now let me create a sample transcript that demonstrates the per-turn pause feature: 
+
+Created [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/transcript-with-custom-pauses.json)
+
+Perfect! I've added flexible pause control with multiple options:
+
+## New Pause Control Features
+
+### 1. **Global Pause Duration** (Interactive Prompt)
+When you run the app and choose modes 1, 3, or 4, you'll be asked:
+```
+Pause between turns in seconds (default: 0.5): 
+```
+You can enter any value like `1.5`, `2.0`, `0.2`, etc.
+
+### 2. **Per-Turn Custom Pauses** (In JSON)
+You can now add `"pause_after"` to any turn in your transcript JSON:
+
+```json
+{
+    "index": 1,
+    "speaker": "Patient",
+    "text": "...",
+    "pause_after": 2.0
+}
+```
+
+This overrides the global pause for that specific turn.
+
+### 3. **Empty Turn Handling**
+The app now automatically skips empty turns (like index 1 and 3 in your large-transcript-example-1.json) by default.
+
+## Examples
+
+**Quick pauses (conversational):**
+```bash
+python agent_examples/transcript_narrator_example.py
+# Enter: 0.3
+```
+
+**Long pauses (dramatic/presentation):**
+```bash
+# Enter: 2.0
+```
+
+**No pauses (continuous):**
+```bash
+# Enter: 0
+```
+
+**Mixed pauses:**
+Use the example file I created (`transcript-with-custom-pauses.json`) which has:
+- Turn 1: 1.0 second pause
+- Turn 3: 2.0 second pause  
+- Turn 5: 0.0 second pause (no pause)
+- Others: Use the global default
+
+Try it now:
+```bash
+python agent_examples/transcript_narrator_example.py
+# Select: transcript-with-custom-pauses.json
+# Mode: 3 (export)
+# Pause: 0.5
+# Output: custom-pauses-demo.wav
+```
+
+This gives you complete control over pacing! 🎉
 
 Made changes.
