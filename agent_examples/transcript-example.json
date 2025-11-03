@@ -1,0 +1,21 @@
+{
+    "transcript": {
+        "speaker_count": 1,
+        "turns": [
+            {
+                "index": 0,
+                "speaker": "Speaker-1",
+                "text": "Transcript text goes here.",
+                "start_time": "00:00:00",
+                "end_time": "00:00:20"
+            },
+            {
+                "index": 1,
+                "speaker": "Speaker-2",
+                "text": "Response text goes here.",
+                "start_time": "00:00:21",
+                "end_time": "00:00:40"
+            }
+        ]
+    }
+}

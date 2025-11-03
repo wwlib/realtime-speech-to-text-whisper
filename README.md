@@ -1,161 +1,186 @@
-# Real-Time Transcription with Wake Word Detection
+# Real-Time Speech-to-Text with Optional TTS
 
-This project implements a local, real-time audio transcription system with wake word detection using Python. It captures audio from a microphone, detects a specified wake word (e.g., "Hey Agent"), and transcribes speech using `faster-whisper`, sending results to a local LLM via Ollama.
+This project provides a modular, real-time speech transcription system with optional text-to-speech capabilities. It supports both standard machines and Apple Silicon with CoreML optimization, offering flexible deployment options for different use cases.
 
 ## Features
-- **Real-Time Transcription**: Processes audio in 1-second chunks using `faster-whisper` for low-latency transcription.
-- **Wake Word Detection**: Uses `pvporcupine` to trigger transcription only when a wake word is detected.
-- **Local Processing**: Runs entirely offline with CPU or GPU support.
-- **Configurable**: Adjustable chunk size, model size, and overlap for performance tuning.
+
+### Core Speech-to-Text
+- **Real-Time Transcription**: Live audio processing with WebSocket communication
+- **Platform Optimization**: Automatic Apple Silicon detection with CoreML acceleration
+- **Flexible Backends**: Choose between faster-whisper and CoreML transcription
+- **Web Interface**: Browser-based client with real-time transcription display
+
+### Optional Text-to-Speech (TTS)
+- **Natural Voice Synthesis**: High-quality TTS using Piper voices
+- **Multiple Voice Options**: Choose from various English voice models
+- **Auto-TTS Mode**: Automatic speech synthesis of transcribed text
+- **Manual TTS**: On-demand text-to-speech conversion
+
+### Architecture
+- **Modular Design**: Separate STT and TTS modules for clean organization
+- **Service Factory Pattern**: Automatic platform-aware service selection
+- **FastAPI Backend**: Modern async web framework with WebSocket support
+- **Local Processing**: Runs entirely offline for privacy and performance
 
 ## Requirements
-- Python 3.8+
-- Libraries: `faster-whisper`, `pyaudio`, `pvporcupine`, `numpy`
-- Picovoice access key (free from Picovoice website)
-- A decent microphone for clear audio input
 
-## Installation
-1. Install dependencies:
-   ```bash
-   pip install faster-whisper pyaudio pvporcupine numpy
-   ```
-2. Obtain a Picovoice access key and wake word model (e.g., "Hey Agent") from [Picovoice Console](https://console.picovoice.ai).
-3. Ensure a microphone is connected and configured.
+- **Python 3.8+**
+- **System Dependencies**: 
+  - macOS: `brew install portaudio ffmpeg`
+  - Linux: `sudo apt-get install portaudio19-dev ffmpeg`
+- **Python Packages**: See `requirements.txt` and `requirements_tts.txt`
+- **For TTS**: Additional Piper TTS models (auto-downloaded)
 
+## Quick Start
 
-## Additional Installation Instructions
-
-Mac
-```
-brew install portaudio
-```
-
-venv
-```
+### 1. Set Up Environment
+```bash
+# Create virtual environment
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install system dependencies (macOS)
+brew install portaudio ffmpeg
+
+# Install Python dependencies
 pip install -r requirements.txt
 ```
 
-## Usage - Basic transcription
-
-Run the script:
+### 2. STT-Only Mode (Recommended for most users)
 ```bash
-python transcribe.py
+# Start STT-only server
+python main.py
+
+# Access web interface
+open http://localhost:8000
 ```
-Say the wake word (e.g., "Hey Robo") followed by your command. Transcriptions are printed and can be piped to an Ollama LLM.
 
-## Usage - Transcription Service with Browser Client
-
-Run the service:
+### 3. STT + TTS Mode (Optional)
 ```bash
-uvicorn main:app --reload
+# Install TTS dependencies
+pip install -r requirements_tts.txt
+
+# Download TTS models (interactive)
+python tts/download_models.py
+
+# Start combined STT+TTS server
+python main_tts.py
+
+# Access TTS-enabled interface
+open http://localhost:8000
 ```
 
-This will start the server:
+
+## Platform Support
+
+### Automatic Platform Detection
+The system automatically detects your platform and chooses the optimal transcription backend:
+
+- **Apple Silicon**: Uses CoreML-optimized transcription for better performance
+- **Other Platforms**: Uses faster-whisper for reliable transcription
+
+### Manual Backend Selection
+Override automatic detection with environment variables:
 ```bash
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+# Force CoreML backend (Apple Silicon only)
+STT_SERVICE=coreml python main.py
+
+# Force faster-whisper backend
+STT_SERVICE=whisper python main.py
 ```
 
+## Project Structure
 
-## Code Overview
-```python
-from faster_whisper import WhisperModel
-import pyaudio
-import numpy as np
-import pvporcupine
-import queue
-import threading
-
-# Configuration
-MODEL_SIZE = "tiny"  # Options: tiny, base, small (tiny/base for real-time)
-SAMPLE_RATE = 16000
-CHUNK_SIZE = 512  # Frames per buffer (adjust for latency vs. CPU load)
-AUDIO_FORMAT = pyaudio.paInt16
-CHANNELS = 1
-OVERLAP_SECONDS = 0.5  # Overlap for transcription context
-
-# Initialize models
-model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")  # Use "cuda" for GPU
-porcupine = pvporcupine.create(access_key="YOUR_PICOVOICE_ACCESS_KEY", keywords=["hey agent"])
-
-# Audio queue and wake word flag
-audio_queue = queue.Queue()
-wake_detected = threading.Event()
-
-def audio_callback(in_data, frame_count, time_info, status):
-    audio_data = np.frombuffer(in_data, dtype=np.int16)
-    audio_queue.put(audio_data)
-    return (in_data, pyaudio.paContinue)
-
-def wake_word_detection():
-    while True:
-        audio_data = audio_queue.get()
-        keyword_index = porcupine.process(audio_data)
-        if keyword_index >= 0:
-            print("Wake word detected!")
-            wake_detected.set()
-
-def transcribe_stream():
-    buffer = np.array([], dtype=np.float32)
-    while True:
-        if wake_detected.is_set():
-            audio_data = audio_queue.get()
-            audio_float = audio_data.astype(np.float32) / 32768.0
-            buffer = np.append(buffer, audio_float)
-            if len(buffer) >= SAMPLE_RATE:
-                segments, _ = model.transcribe(buffer, language="en", vad_filter=True)
-                for segment in segments:
-                    print(f"Transcription: {segment.text}")
-                    # Pipe segment.text to Ollama LLM here
-                buffer = buffer[int(SAMPLE_RATE * OVERLAP_SECONDS):]  # Slide window
-            wake_detected.clear()
-
-# Set up PyAudio stream
-p = pyaudio.PyAudio()
-stream = p.open(format=AUDIO_FORMAT, channels=CHANNELS, rate=SAMPLE_RATE,
-                input=True, frames_per_buffer=CHUNK_SIZE, stream_callback=audio_callback)
-
-# Start threads
-wake_thread = threading.Thread(target=wake_word_detection, daemon=True)
-transcription_thread = threading.Thread(target=transcribe_stream, daemon=True)
-wake_thread.start()
-transcription_thread.start()
-
-# Start stream
-print("Listening for wake word...")
-stream.start_stream()
-try:
-    while True:
-        pass
-except KeyboardInterrupt:
-    print("Stopping...")
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
-    porcupine.delete()
+```
+├── main.py                 # STT-only server
+├── main_tts.py            # STT+TTS server
+├── requirements.txt       # Core dependencies
+├── requirements_tts.txt   # TTS dependencies
+├── stt/                   # Speech-to-text module
+│   ├── base_service.py       # Base transcription interface
+│   ├── service_factory.py   # Platform-aware service creation
+│   ├── transcription_service.py  # faster-whisper implementation
+│   ├── coreml_transcription_service.py  # CoreML implementation
+│   ├── platform_detector.py # Apple Silicon detection
+│   └── connection_manager.py # WebSocket connection handling
+├── tts/                   # Text-to-speech module (optional)
+│   ├── tts_service.py        # Piper TTS implementation
+│   ├── download_models.py   # TTS model downloader
+│   └── models/              # Voice model files
+└── static/
+    ├── index.html           # STT web interface
+    └── index_tts.html       # STT+TTS web interface
 ```
 
-## Configuration Tips
-- **Model Size**: Use `tiny` or `base` for real-time performance; `small` for better accuracy if hardware allows.
-- **Chunk Size**: Decrease `CHUNK_SIZE` (e.g., 256) for lower latency or increase (e.g., 1024) for less CPU load.
-- **Overlap**: Adjust `OVERLAP_SECONDS` to balance context and performance.
-- **GPU Support**: Set `device="cuda"` in `WhisperModel` for faster transcription if a compatible GPU is available.
-- **Microphone**: Use a high-quality microphone to minimize noise and improve accuracy.
+## Configuration
 
-## Integration with Ollama
-- Pipe transcriptions (`segment.text`) to your local Ollama LLM by adding a function call in the `transcribe_stream` loop.
-- Example: Send `segment.text` via a REST API or socket to your LLM endpoint.
+### Environment Variables
+- `STT_SERVICE`: Override backend selection (`whisper` or `coreml`)
+- `TTS_VOICE`: Choose TTS voice model (e.g., `en_US-lessac-medium`)
+
+### Performance Tuning
+- **Model Size**: Configurable in service files (tiny, base, small, medium)
+- **Audio Settings**: Adjustable chunk size and sample rate
+- **GPU Support**: Automatic GPU detection for faster-whisper
+
+## Web Interface Features
+
+### STT-Only Interface (`index.html`)
+- Real-time transcription display
+- Microphone status indicator
+- Connection status monitoring
+
+### STT+TTS Interface (`index_tts.html`)
+- All STT features plus:
+- Auto-TTS toggle (speak transcribed text)
+- Manual TTS input field
+- Voice synthesis controls
 
 ## Troubleshooting
-- **Choppy Audio**: Reduce `CHUNK_SIZE` or check microphone quality.
-- **Slow Transcription**: Switch to a smaller model or enable GPU support.
-- **Wake Word Issues**: Ensure the correct wake word model and valid Picovoice key.
 
-## Future Enhancements
-- Save transcriptions to a file.
-- Add keyword-based triggers for specific actions.
-- Optimize buffer size for lower latency.
+### Audio Issues
+- **Microphone not detected**: Check system permissions and audio device selection
+- **Poor transcription quality**: Verify microphone quality and background noise levels
+- **Audio dropouts**: Adjust chunk size or check system performance
+
+### Platform Issues
+- **CoreML not available**: Ensure you're on Apple Silicon; falls back to faster-whisper automatically
+- **Model loading errors**: Check available memory and disk space for model files
+- **Performance issues**: Try smaller model sizes or check CPU/GPU utilization
+
+### TTS Issues
+- **No voice output**: Ensure TTS models are downloaded with `python tts/download_models.py`
+- **Audio playback issues**: Check browser audio permissions and system audio settings
+- **Voice quality problems**: Try different voice models or check audio codec support
+
+### Connection Issues
+- **WebSocket connection failed**: Check firewall settings and port availability
+- **Browser compatibility**: Use modern browsers with WebSocket and Web Audio API support
+- **CORS issues**: Ensure proper localhost/origin configuration
+
+## Advanced Usage
+
+### Custom Deployment
+- Modify host/port settings in `main.py` or `main_tts.py`
+- Configure reverse proxy for production deployment
+- Set up SSL/TLS for secure connections
+
+### Integration Examples
+- **REST API**: Send audio data via HTTP POST to `/transcribe` endpoint
+- **WebSocket**: Real-time bidirectional communication for live applications
+- **Batch Processing**: Process audio files through the transcription services
+
+### Development
+- **Service Extension**: Inherit from `BaseTranscriptionService` for custom backends
+- **TTS Customization**: Modify `TTSService` for different voice synthesis engines
+- **UI Customization**: Edit HTML/CSS/JS files in `static/` directory
+
+## Related Documentation
+
+- [`README_TTS.md`](README_TTS.md) - Detailed TTS setup and configuration
+- [`TTS_IMPLEMENTATION.md`](TTS_IMPLEMENTATION.md) - Technical TTS implementation details
+- [`MODULAR_ARCHITECTURE.md`](MODULAR_ARCHITECTURE.md) - Architecture and design decisions
 
 ## License
+
 MIT License - feel free to use and modify for your needs!

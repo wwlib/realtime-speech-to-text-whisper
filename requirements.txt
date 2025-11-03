@@ -1,5 +1,8 @@
+openai-whisper
 faster-whisper
 pyaudio
 numpy
 fastapi
 uvicorn[standard]
+torch
+coremltools

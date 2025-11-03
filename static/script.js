@@ -15,7 +15,21 @@ document.addEventListener("DOMContentLoaded", function() {
         };
 
         socket.onmessage = function(event) {
-            const message = event.data;
+            let message;
+            try {
+                // Try to parse as JSON first
+                const data = JSON.parse(event.data);
+                if (data.type === 'transcription') {
+                    message = data.text;
+                } else {
+                    // If it's JSON but not a transcription type, ignore it
+                    return;
+                }
+            } catch (e) {
+                // If JSON parsing fails, treat as plain text (for backward compatibility)
+                message = event.data;
+            }
+            
             // Append the new transcription text to the display
             const p = document.createElement("p");
             p.textContent = message;
