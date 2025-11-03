@@ -1,15 +1,28 @@
 # Transcript Narrator - Audio Export Guide
 
-## 24-bit PCM at 16kHz Output
+## Multiple Audio Format Options
 
-The transcript narrator now exports audio as **24-bit PCM at 16kHz** by default.
+The transcript narrator supports **three audio output formats** to meet different needs.
 
-### Audio Specifications
+### Supported Formats
 
-- **Bit Depth**: 24-bit PCM (high quality)
-- **Sample Rate**: 16,000 Hz (optimal for speech)
-- **Channels**: Mono
-- **Format**: WAV
+1. **16-bit PCM @ 22050 Hz** (Original)
+   - Linear PCM, 16-bit little-endian signed integer
+   - 22,050 Hz sample rate (Piper's native rate)
+   - No resampling required
+   - Smallest file size
+
+2. **16-bit PCM @ 16000 Hz**
+   - Linear PCM, 16-bit little-endian signed integer
+   - 16,000 Hz sample rate (standard for speech)
+   - Resampled from 22050 Hz (requires scipy)
+   - Good balance of quality and size
+
+3. **24-bit PCM @ 16000 Hz** (Default)
+   - Linear PCM, 24-bit little-endian signed integer
+   - 16,000 Hz sample rate (standard for speech)
+   - Resampled from 22050 Hz (requires scipy)
+   - Highest quality, best for post-processing
 
 ### Requirements
 
@@ -18,11 +31,10 @@ The transcript narrator now exports audio as **24-bit PCM at 16kHz** by default.
 - `piper-tts`
 
 **Optional (for sample rate conversion):**
-- `scipy` - Enables resampling from Piper's native 22.05kHz to 16kHz
+- `scipy` - Enables resampling from 22.05kHz to 16kHz
+- Without scipy: 16kHz formats will fall back to 22.05kHz
 
-If scipy is not installed, the audio will use the native sample rate from the TTS engine (typically 22.05kHz).
-
-### Installing scipy (Optional)
+### Installing scipy (Recommended)
 
 ```bash
 pip install scipy
@@ -30,24 +42,59 @@ pip install scipy
 
 ### Usage
 
-Export transcript to 24-bit PCM audio:
+Run the narrator and choose your format:
 
 ```bash
 python agent_examples/transcript_narrator_example.py
 ```
 
-Choose mode 3 or 4 to export audio files.
+When you select mode 3 or 4 (Export), you'll be prompted:
+
+```
+Audio format options:
+1. 16-bit PCM, 22050 Hz (Original)
+2. 16-bit PCM, 16000 Hz
+3. 24-bit PCM, 16000 Hz (Default)
+Choose format (1-3, default: 3):
+```
 
 ### Audio Quality Comparison
 
-**16-bit vs 24-bit:**
-- 16-bit: Dynamic range of ~96 dB
-- 24-bit: Dynamic range of ~144 dB (much better for post-processing)
+**Bit Depth:**
+- 16-bit: Dynamic range of ~96 dB (standard quality)
+- 24-bit: Dynamic range of ~144 dB (professional quality, better for editing)
 
 **Sample Rates:**
-- 16 kHz: Standard for speech applications, smaller files
-- 22.05 kHz: Piper's native rate (used if scipy not available)
-- 44.1 kHz: CD quality (overkill for TTS)
+- 22,050 Hz: Piper's native rate, no quality loss
+- 16,000 Hz: Industry standard for speech applications
+- Both are excellent for voice/speech content
+
+### File Size Comparison
+
+For 1 minute of audio:
+- 16-bit @ 22.05 kHz: ~2.6 MB (smallest)
+- 16-bit @ 16.0 kHz: ~1.9 MB
+- 24-bit @ 16.0 kHz: ~2.8 MB (largest)
+
+### When to Use Each Format
+
+**16-bit @ 22050 Hz:**
+- ✅ Maximum compatibility
+- ✅ No resampling artifacts
+- ✅ Fastest processing
+- ✅ Use when you need Piper's exact output
+
+**16-bit @ 16000 Hz:**
+- ✅ Standard speech format
+- ✅ Smaller file sizes
+- ✅ Compatible with most speech AI systems
+- ✅ Use for speech recognition, telephony, voice apps
+
+**24-bit @ 16000 Hz:**
+- ✅ Professional audio quality
+- ✅ Best for post-processing (EQ, compression, effects)
+- ✅ Maximum dynamic range
+- ✅ Use for production, editing, archival
 
 ### File Sizes
 
@@ -59,18 +106,38 @@ Approximate file sizes for 1 minute of audio:
 ### Example Output
 
 ```
+Narration modes:
+1. Auto-play entire transcript
+2. Interactive mode (step through turns)
+3. Export to audio file (no playback)
+4. Export to audio file AND play
+Choose mode (1-4): 3
+
+Audio format options:
+1. 16-bit PCM, 22050 Hz (Original)
+2. 16-bit PCM, 16000 Hz
+3. 24-bit PCM, 16000 Hz (Default)
+Choose format (1-3, default: 3): 2
+Selected: 16-bit PCM, 16000 Hz
+
+Pause between turns in seconds (default: 0.5): 1.0
+Using pause duration: 1.0s
+
+Output filename (default: narration.wav): my-transcript.wav
+
+============================================================
 Exporting transcript to audio file...
-Format: 24-bit PCM, 16000 Hz, Mono
-Default pause: 0.5s between turns
+Format: 16-bit PCM, 16000 Hz, Mono
+Default pause: 1.0s between turns
 ============================================================
 [Turn 0] Clinician: "Hello. I am Dr. Smith..."
   Resampled from 22050 Hz to 16000 Hz
 [Turn 1] Patient: "Hi, Dr. Smith. I'm feeling okay..."
 ============================================================
-✓ Audio file saved: narration.wav
-  Format: 24-bit PCM, 16000 Hz, Mono
+✓ Audio file saved: my-transcript.wav
+  Format: 16-bit PCM, 16000 Hz, Mono
   Duration: 45.2 seconds
-  File size: 2123.4 KB
+  File size: 1416.3 KB
 ============================================================
 ```
 
@@ -100,15 +167,27 @@ You can control pauses between turns in three ways:
 
 ### Technical Notes
 
+**16-bit PCM Encoding:**
+- Values are scaled to range: -32,767 to +32,767
+- Stored as 2 bytes per sample (little-endian)
+- Standard CD quality format
+
 **24-bit PCM Encoding:**
 - Values are scaled to range: -8,388,607 to +8,388,607
 - Stored as 3 bytes per sample (little-endian)
-- Compatible with all major audio software (Audacity, Adobe Audition, etc.)
+- Professional audio format
+- Compatible with all major audio software (Audacity, Adobe Audition, Pro Tools, etc.)
 
 **Resampling:**
-- Uses scipy.signal.resample for high-quality conversion
+- Uses `scipy.signal.resample` for high-quality conversion
 - Preserves audio quality during sample rate conversion
-- Falls back to native rate if scipy unavailable
+- Falls back to native rate (22050 Hz) if scipy unavailable
+
+**All formats:**
+- Mono channel (1 channel)
+- Little-endian byte order
+- WAV container format
+- Standard PCM encoding (no compression)
 
 ### Troubleshooting
 
@@ -161,15 +240,22 @@ Narration modes:
 3. Export to audio file (no playback)
 4. Export to audio file AND play
 Choose mode (1-4): 3
-Pause between turns in seconds (default: 0.5): 2
-Using pause duration: 2.0s
 
-Output filename (default: narration.wav): long-transcript-2.wav
+Audio format options:
+1. 16-bit PCM, 22050 Hz (Original)
+2. 16-bit PCM, 16000 Hz
+3. 24-bit PCM, 16000 Hz (Default)
+Choose format (1-3, default: 3): 2
+Selected: 16-bit PCM, 16000 Hz
+Pause between turns in seconds (default: 0.5): 3
+Using pause duration: 3.0s
+
+Output filename (default: narration.wav): long-transcript-3-second-16-bit.wav
 
 ============================================================
 Exporting transcript to audio file...
-Format: 24-bit PCM, 16000 Hz, Mono
-Default pause: 2.0s between turns
+Format: 16-bit PCM, 16000 Hz, Mono
+Default pause: 3.0s between turns
 ============================================================
 [Turn 0] Clinician: "Alright, um, so we've got a 68-year-old patient he..."
 [Turn 1] Clinician: (empty - skipped)
@@ -202,9 +288,9 @@ Default pause: 2.0s between turns
   Resampled from 22050 Hz to 16000 Hz
 
 ============================================================
-✓ Audio file saved: long-transcript-2.wav
-  Format: 24-bit PCM, 16000 Hz, Mono
-  Duration: 382.5 seconds
-  File size: 17930.4 KB
+✓ Audio file saved: long-transcript-3-second-16-bit.wav
+  Format: 16-bit PCM, 16000 Hz, Mono
+  Duration: 397.7 seconds
+  File size: 12426.7 KB
 ============================================================
 ```

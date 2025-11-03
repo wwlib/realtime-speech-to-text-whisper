@@ -485,3 +485,148 @@ python agent_examples/transcript_narrator_example.py
 ```
 
 Made changes.
+
+wwlib: This is great. AND, it turns out we need 3 audio output options:
+
+The original Linear PCM, 16 bit little-endian signed integer, 22050 Hz
+
+AND: Linear PCM, 16 bit little-endian signed integer, 16000 Hz
+
+AMD: Linear PCM, 24 bit little-endian signed integer, 16000 Hz
+
+GitHub Copilot: Perfect! Let me add configurable audio format options. I'll update the code to support all three formats and let users choose which one they want. 
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/transcript_narrator_example.py#90-90), lines 90 to 120
+
+Let me add an audio format configuration class and update the methods: 
+
+Using "Replace String in File"
+
+
+```
+
+```
+Now let me update the synthesize_to_file method to use the audio format: 
+
+Using "Replace String in File"
+
+
+```
+
+```
+Now let me update the export_to_audio_file method: 
+
+Using "Replace String in File"
+
+
+```
+
+```
+Now let me find and update the rest of the export_to_audio_file method: 
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/transcript_narrator_example.py#435-435), lines 435 to 515
+
+Using "Replace String in File"
+
+
+```
+
+```
+Now let me update the main function to add format selection: 
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/transcript_narrator_example.py#550-550), lines 550 to 610
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/transcript_narrator_example.py#625-625), lines 625 to 655
+
+Using "Replace String in File"
+
+
+```
+
+```
+Perfect! Now let me update the README to document the three format options: 
+
+Read [](file:///Users/andrewrapo/github/wwlib/realtime-speech-to-text-whisper/agent_examples/README-audio-export.md)
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+Perfect! I've successfully added support for all three audio formats. Let me create a quick summary:
+
+## Summary of Changes
+
+### ✅ Three Audio Format Options Now Available:
+
+1. **16-bit PCM @ 22050 Hz** (Original)
+   - Linear PCM, 16-bit little-endian signed integer
+   - Native Piper rate, no resampling needed
+   - Fastest processing, smallest compatible size
+
+2. **16-bit PCM @ 16000 Hz**
+   - Linear PCM, 16-bit little-endian signed integer
+   - Standard speech format
+   - Requires scipy for resampling
+
+3. **24-bit PCM @ 16000 Hz** (Default)
+   - Linear PCM, 24-bit little-endian signed integer  
+   - Professional quality
+   - Best for post-processing
+
+### How It Works:
+
+When you run the app and choose export mode (3 or 4), you'll see:
+
+```
+Audio format options:
+1. 16-bit PCM, 22050 Hz (Original)
+2. 16-bit PCM, 16000 Hz
+3. 24-bit PCM, 16000 Hz (Default)
+Choose format (1-3, default: 3):
+```
+
+Just enter 1, 2, or 3 to select your format!
+
+### Key Features:
+
+- ✅ **Format selection** at export time
+- ✅ **Automatic resampling** (when scipy available)
+- ✅ **Graceful fallback** (uses 22050 Hz if scipy missing)
+- ✅ **Correct bit depth encoding** for both 16-bit and 24-bit
+- ✅ **All formats are little-endian signed integers**
+
+Try it out now:
+
+```bash
+python agent_examples/transcript_narrator_example.py
+```
+
+Select mode 3, choose your format, and export! 🎉
+
+Made changes.

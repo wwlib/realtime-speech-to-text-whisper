@@ -26,6 +26,45 @@ except ImportError:
     sys.exit(1)
 
 
+class AudioFormat:
+    """Audio format configuration."""
+    
+    # Predefined formats
+    FORMAT_16BIT_22050 = "16bit_22050hz"  # Original: 16-bit PCM @ 22.05 kHz
+    FORMAT_16BIT_16000 = "16bit_16000hz"  # 16-bit PCM @ 16 kHz
+    FORMAT_24BIT_16000 = "24bit_16000hz"  # 24-bit PCM @ 16 kHz
+    
+    def __init__(self, format_name: str = FORMAT_24BIT_16000):
+        self.format_name = format_name
+        
+        if format_name == self.FORMAT_16BIT_22050:
+            self.bit_depth = 16
+            self.sample_rate = 22050
+            self.sample_width = 2  # bytes
+        elif format_name == self.FORMAT_16BIT_16000:
+            self.bit_depth = 16
+            self.sample_rate = 16000
+            self.sample_width = 2  # bytes
+        elif format_name == self.FORMAT_24BIT_16000:
+            self.bit_depth = 24
+            self.sample_rate = 16000
+            self.sample_width = 3  # bytes
+        else:
+            raise ValueError(f"Unknown format: {format_name}")
+    
+    def __str__(self):
+        return f"{self.bit_depth}-bit PCM, {self.sample_rate} Hz, Mono"
+    
+    @staticmethod
+    def get_format_options():
+        """Get list of available format options."""
+        return {
+            "1": (AudioFormat.FORMAT_16BIT_22050, "16-bit PCM, 22050 Hz (Original)"),
+            "2": (AudioFormat.FORMAT_16BIT_16000, "16-bit PCM, 16000 Hz"),
+            "3": (AudioFormat.FORMAT_24BIT_16000, "24-bit PCM, 16000 Hz (Default)"),
+        }
+
+
 class VoiceManager:
     """Manages multiple Piper TTS voices."""
     
@@ -176,8 +215,11 @@ class TranscriptNarrator:
         for voice_name in set(self.speaker_voices.values()):
             self.voice_manager.load_voice(voice_name)
     
-    def synthesize_to_file(self, text: str, voice_name: str, target_sample_rate: int = 16000) -> Optional[str]:
+    def synthesize_to_file(self, text: str, voice_name: str, audio_format: AudioFormat = None) -> Optional[str]:
         """Synthesize speech and save to temporary file."""
+        if audio_format is None:
+            audio_format = AudioFormat(AudioFormat.FORMAT_24BIT_16000)
+        
         voice = self.voice_manager.get_voice(voice_name)
         if not voice:
             return None
@@ -203,23 +245,36 @@ class TranscriptNarrator:
             audio_data = np.concatenate(audio_chunks)
             
             # Resample if needed
-            if sample_rate and sample_rate != target_sample_rate:
-                from scipy import signal
-                num_samples = int(len(audio_data) * target_sample_rate / sample_rate)
-                audio_data = signal.resample(audio_data, num_samples)
+            if sample_rate and sample_rate != audio_format.sample_rate:
+                try:
+                    from scipy import signal
+                    num_samples = int(len(audio_data) * audio_format.sample_rate / sample_rate)
+                    audio_data = signal.resample(audio_data, num_samples)
+                except ImportError:
+                    # If scipy not available and rates don't match, use original rate
+                    if sample_rate != audio_format.sample_rate:
+                        audio_format.sample_rate = sample_rate
             
-            # Clip and convert to 24-bit PCM (stored as int32 with 24-bit range)
+            # Clip audio
             audio_clipped = np.clip(audio_data, -1.0, 1.0)
-            audio_int24 = (audio_clipped * 8388607).astype(np.int32)  # 2^23 - 1 = 8388607
             
-            # Convert to 24-bit bytes (little-endian, 3 bytes per sample)
-            # Pack as 4-byte int32, then take first 3 bytes
-            audio_bytes_4 = audio_int24.tobytes()  # 4 bytes per sample
-            
-            # Extract 3 bytes per sample (little-endian)
-            audio_bytes = bytearray()
-            for i in range(0, len(audio_bytes_4), 4):
-                audio_bytes.extend(audio_bytes_4[i:i+3])  # Take first 3 bytes of each int32
+            # Convert based on bit depth
+            if audio_format.bit_depth == 16:
+                # 16-bit PCM
+                audio_int = (audio_clipped * 32767).astype(np.int16)
+                audio_bytes = audio_int.tobytes()
+            elif audio_format.bit_depth == 24:
+                # 24-bit PCM
+                audio_int24 = (audio_clipped * 8388607).astype(np.int32)
+                audio_bytes_4 = audio_int24.tobytes()
+                
+                # Extract 3 bytes per sample (little-endian)
+                audio_bytes = bytearray()
+                for i in range(0, len(audio_bytes_4), 4):
+                    audio_bytes.extend(audio_bytes_4[i:i+3])
+                audio_bytes = bytes(audio_bytes)
+            else:
+                raise ValueError(f"Unsupported bit depth: {audio_format.bit_depth}")
             
             # Write to temporary WAV file
             temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -228,9 +283,9 @@ class TranscriptNarrator:
             
             with wave.open(temp_path, "wb") as wav_file:
                 wav_file.setnchannels(1)  # Mono
-                wav_file.setsampwidth(3)  # 24-bit
-                wav_file.setframerate(target_sample_rate)
-                wav_file.writeframes(bytes(audio_bytes))
+                wav_file.setsampwidth(audio_format.sample_width)
+                wav_file.setframerate(audio_format.sample_rate)
+                wav_file.writeframes(audio_bytes)
             
             return temp_path
             
@@ -318,13 +373,16 @@ class TranscriptNarrator:
         print("Transcript narration complete!")
         print("="*60)
     
-    def export_to_audio_file(self, output_path: str, pause_between_turns: float = 0.5, skip_empty: bool = True, target_sample_rate: int = 16000):
-        """Export entire transcript to a single audio file (24-bit PCM)."""
+    def export_to_audio_file(self, output_path: str, pause_between_turns: float = 0.5, skip_empty: bool = True, audio_format: AudioFormat = None):
+        """Export entire transcript to a single audio file."""
+        if audio_format is None:
+            audio_format = AudioFormat(AudioFormat.FORMAT_24BIT_16000)
+        
         turns = self.transcript_data["transcript"]["turns"]
         
         print("\n" + "="*60)
         print("Exporting transcript to audio file...")
-        print(f"Format: 24-bit PCM, {target_sample_rate} Hz, Mono")
+        print(f"Format: {audio_format}")
         print(f"Default pause: {pause_between_turns}s between turns")
         print("="*60)
         
@@ -392,41 +450,49 @@ class TranscriptNarrator:
             final_audio = np.concatenate(all_audio_chunks)
             
             # Resample if needed
-            if sample_rate and sample_rate != target_sample_rate:
+            if sample_rate and sample_rate != audio_format.sample_rate:
                 try:
                     from scipy import signal
-                    num_samples = int(len(final_audio) * target_sample_rate / sample_rate)
+                    num_samples = int(len(final_audio) * audio_format.sample_rate / sample_rate)
                     final_audio = signal.resample(final_audio, num_samples)
-                    print(f"  Resampled from {sample_rate} Hz to {target_sample_rate} Hz")
+                    print(f"  Resampled from {sample_rate} Hz to {audio_format.sample_rate} Hz")
                 except ImportError:
                     print(f"  Warning: scipy not installed, keeping original sample rate {sample_rate} Hz")
-                    target_sample_rate = sample_rate
+                    audio_format.sample_rate = sample_rate
             
-            # Clip and convert to 24-bit PCM (stored as int32 with 24-bit range)
+            # Clip audio
             audio_clipped = np.clip(final_audio, -1.0, 1.0)
-            audio_int24 = (audio_clipped * 8388607).astype(np.int32)  # 2^23 - 1 = 8388607
             
-            # Convert to 24-bit bytes (little-endian, 3 bytes per sample)
-            # Pack as 4-byte int32, then take first 3 bytes
-            audio_bytes_4 = audio_int24.tobytes()  # 4 bytes per sample
-            
-            # Extract 3 bytes per sample (little-endian)
-            audio_bytes = bytearray()
-            for i in range(0, len(audio_bytes_4), 4):
-                audio_bytes.extend(audio_bytes_4[i:i+3])  # Take first 3 bytes of each int32
+            # Convert based on bit depth
+            if audio_format.bit_depth == 16:
+                # 16-bit PCM
+                audio_int = (audio_clipped * 32767).astype(np.int16)
+                audio_bytes = audio_int.tobytes()
+            elif audio_format.bit_depth == 24:
+                # 24-bit PCM
+                audio_int24 = (audio_clipped * 8388607).astype(np.int32)
+                audio_bytes_4 = audio_int24.tobytes()
+                
+                # Extract 3 bytes per sample (little-endian)
+                audio_bytes_ba = bytearray()
+                for i in range(0, len(audio_bytes_4), 4):
+                    audio_bytes_ba.extend(audio_bytes_4[i:i+3])
+                audio_bytes = bytes(audio_bytes_ba)
+            else:
+                raise ValueError(f"Unsupported bit depth: {audio_format.bit_depth}")
             
             # Write to file
             output_path = Path(output_path)
             with wave.open(str(output_path), "wb") as wav_file:
                 wav_file.setnchannels(1)  # Mono
-                wav_file.setsampwidth(3)  # 24-bit
-                wav_file.setframerate(target_sample_rate)
-                wav_file.writeframes(bytes(audio_bytes))
+                wav_file.setsampwidth(audio_format.sample_width)
+                wav_file.setframerate(audio_format.sample_rate)
+                wav_file.writeframes(audio_bytes)
             
-            duration = len(final_audio) / target_sample_rate
+            duration = len(final_audio) / audio_format.sample_rate
             print("\n" + "="*60)
             print(f"✓ Audio file saved: {output_path}")
-            print(f"  Format: 24-bit PCM, {target_sample_rate} Hz, Mono")
+            print(f"  Format: {audio_format}")
             print(f"  Duration: {duration:.1f} seconds")
             print(f"  File size: {output_path.stat().st_size / 1024:.1f} KB")
             print("="*60)
@@ -530,6 +596,23 @@ def main():
     
     mode = input("Choose mode (1-4): ").strip()
     
+    # Get audio format for export modes
+    audio_format = None
+    if mode in ["3", "4"]:
+        print("\nAudio format options:")
+        format_options = AudioFormat.get_format_options()
+        for key, (format_name, description) in format_options.items():
+            print(f"{key}. {description}")
+        
+        format_choice = input("Choose format (1-3, default: 3): ").strip() or "3"
+        if format_choice in format_options:
+            format_name, description = format_options[format_choice]
+            audio_format = AudioFormat(format_name)
+            print(f"Selected: {description}")
+        else:
+            print("Invalid choice, using default: 24-bit PCM, 16000 Hz")
+            audio_format = AudioFormat(AudioFormat.FORMAT_24BIT_16000)
+    
     # Get pause duration for modes that need it
     pause_duration = 0.5  # Default
     if mode in ["1", "3", "4"]:
@@ -554,14 +637,14 @@ def main():
             output_file = input("Output filename (default: narration.wav): ").strip()
             if not output_file:
                 output_file = "narration.wav"
-            narrator.export_to_audio_file(output_file, pause_between_turns=pause_duration, skip_empty=True)
+            narrator.export_to_audio_file(output_file, pause_between_turns=pause_duration, skip_empty=True, audio_format=audio_format)
         elif mode == "4":
             # Export and play
             output_file = input("Output filename (default: narration.wav): ").strip()
             if not output_file:
                 output_file = "narration.wav"
             
-            if narrator.export_to_audio_file(output_file, pause_between_turns=pause_duration, skip_empty=True):
+            if narrator.export_to_audio_file(output_file, pause_between_turns=pause_duration, skip_empty=True, audio_format=audio_format):
                 print("\nNow playing the exported file...")
                 time.sleep(1)
                 narrator.play_audio_file(output_file)
